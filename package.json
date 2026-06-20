@@ -1,0 +1,31 @@
+{
+  "name": "gpt-outputs",
+  "version": "1.0.0",
+  "description": "Deliverables as code",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "manifest": "node generate-manifest.mjs",
+    "build:public": "node prepare-public.mjs",
+    "predeploy": "npm run build:public",
+    "test": "node --test test/*.test.mjs",
+    "test:simulate": "node --test test/simulate-engine.test.mjs test/worker.test.mjs test/simulate-client.test.mjs",
+    "bench:clone": "node benchmark_clone.mjs"
+  },
+  "devDependencies": {
+    "@babel/standalone": "^7.29.4",
+    "chart.js": "^4.5.1",
+    "d3": "^7.9.0",
+    "esbuild": "^0.25.12",
+    "lodash": "^4.18.1",
+    "lucide-react": "^1.16.0",
+    "mammoth": "^1.12.0",
+    "mathjs": "^15.2.0",
+    "papaparse": "^5.5.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^3.8.1",
+    "tone": "^15.1.22"
+  },
+  "license": "ISC"
+}
