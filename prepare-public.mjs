@@ -263,7 +263,7 @@ async function vendorBrowserModules() {
   copyFileSync(join(root, 'vendor', 'uploaded-jsx-utilities.css'), join(vendorDir, 'uploaded-jsx-utilities.css'));
 }
 
-for (const file of ['index.html', 'iphone.html']) {
+for (const file of ['index.html', 'iphone.html', 'viewer-shared.mjs']) {
   copyFileSync(join(root, file), join(publicDir, file));
 }
 writeFileSync(join(publicDir, 'jsx-manifest.json'), manifestJson);

@@ -55,6 +55,39 @@
             /* Prevent body scroll, handle scroll in root */
         }
 
+        #panel-toggle-btn {
+            position: fixed;
+            bottom: calc(24px + var(--safe-area-bottom));
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: rgba(108, 61, 255, 0.9);
+            color: white;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        #panel-toggle-btn:active {
+            transform: scale(0.95);
+        }
+
+        #panel-toggle-btn.hidden {
+            opacity: 0;
+            pointer-events: none;
+            visibility: hidden;
+            transform: scale(0.8);
+        }
+
         /* Top Navigation Bar */
         #top-nav {
             position: fixed;
@@ -72,6 +105,25 @@
             justify-content: center;
             height: calc(44px + var(--safe-area-top));
             /* Standard iOS nav bar height */
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.3s;
+        }
+
+        #top-nav.hidden {
+            transform: translateY(-100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #minimize-btn {
+            position: absolute;
+            right: 12px;
+            background: transparent;
+            border: none;
+            color: var(--tint-color);
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 8px;
         }
 
         .select-wrapper {
@@ -129,6 +181,13 @@
             justify-content: space-evenly;
             height: calc(49px + var(--safe-area-bottom));
             /* Standard iOS tab bar height */
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.3s;
+        }
+
+        #bottom-tab.hidden {
+            transform: translateY(100%);
+            opacity: 0;
+            pointer-events: none;
         }
 
         .tab-btn {
@@ -176,6 +235,12 @@
             /* Smooth scrolling on iOS */
             padding-top: calc(44px + var(--safe-area-top));
             padding-bottom: calc(49px + var(--safe-area-bottom));
+            transition: padding 0.3s;
+        }
+
+        #scroll-container.expanded {
+            padding-top: var(--safe-area-top);
+            padding-bottom: var(--safe-area-bottom);
         }
 
         #root {
@@ -209,17 +274,19 @@
 </head>
 
 <body>
-    <div id="top-nav">
+    <button id="panel-toggle-btn" title="Open Controls">⚙️</button>
+    <div id="top-nav" class="hidden">
         <div class="select-wrapper">
             <select id="jsx-select"></select>
         </div>
+        <button id="minimize-btn" type="button">Done</button>
     </div>
 
-    <div id="scroll-container">
+    <div id="scroll-container" class="expanded">
         <div id="root"></div>
     </div>
 
-    <div id="bottom-tab">
+    <div id="bottom-tab" class="hidden">
         <button id="reset-btn" class="tab-btn" type="button">
             <svg viewBox="0 0 24 24">
                 <path
@@ -237,532 +304,19 @@
     </div>
     <input type="text" id="share-url" readonly />
 
-    <script type="module">
+        <script type="module">
         import React from 'react';
-        import { createRoot } from 'react-dom/client';
+        import { initViewer } from './viewer-shared.mjs';
 
-        window.React = React; // Expose React globally just in case components expect it
+        window.React = React;
 
-        window.addEventListener('error', (e) => {
-            const rootEl = document.getElementById('root');
-            if (rootEl) {
-                rootEl.textContent = '';
-                const errDiv = document.createElement('div');
-                errDiv.className = 'error-message';
-                errDiv.textContent = `Uncaught Error: ${e.message}\nCheck browser console for more details.`;
-                rootEl.appendChild(errDiv);
-            }
+        initViewer({
+            isMobile: true,
+            defaultPageBg: '#f2f2f7',
+            selectLabelMinLength: 20,
+            selectLabelMaxLength: 36,
+            selectLabelHorizontalChrome: 46
         });
-        window.addEventListener('unhandledrejection', (e) => {
-            const rootEl = document.getElementById('root');
-            if (rootEl) {
-                const msg = e.reason && e.reason.message ? e.reason.message : e.reason;
-                rootEl.textContent = '';
-                const errDiv = document.createElement('div');
-                errDiv.className = 'error-message';
-                errDiv.textContent = `Unhandled Promise Rejection: ${msg}\nCheck browser console for more details.`;
-                rootEl.appendChild(errDiv);
-            }
-        });
-
-        const rootElement = document.getElementById('root');
-        const root = createRoot(rootElement);
-        const DEFAULT_PAGE_BG = '#f2f2f7';
-
-        let ALLOWED_FILES = [];
-        const FILE_SOURCES = new Map();
-
-        const SHARE_PARAM = 'state';
-        const MAX_SHARED_STATE_LENGTH = 12000;
-
-        function isSafeObjectKey(key) {
-            return key !== '__proto__' && key !== 'prototype' && key !== 'constructor';
-        }
-
-        function isAllowedManifestFile(value) {
-            return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*\.jsx$/.test(value);
-        }
-
-        const SELECT_LABEL_MIN_LENGTH = 20;
-        const SELECT_LABEL_MAX_LENGTH = 36;
-        const SELECT_LABEL_HORIZONTAL_CHROME = 46;
-        const SELECT_LABEL_AVERAGE_CHAR_RATIO = 0.56;
-
-        function truncateMiddle(text, maxLength) {
-            if (text.length <= maxLength) return text;
-            if (maxLength <= 3) return text.slice(0, maxLength);
-            const keepLength = maxLength - 3;
-            const prefixLength = Math.ceil(keepLength * 0.62);
-            const suffixLength = keepLength - prefixLength;
-            return `${text.slice(0, prefixLength)}...${text.slice(text.length - suffixLength)}`;
-        }
-
-        function getSelectLabelMaxLength() {
-            const rect = selectEl.getBoundingClientRect();
-            if (rect.width <= 0) return SELECT_LABEL_MAX_LENGTH;
-            const fontSize = Number.parseFloat(window.getComputedStyle(selectEl).fontSize) || 16;
-            const usableWidth = Math.max(80, rect.width - SELECT_LABEL_HORIZONTAL_CHROME);
-            const estimatedLength = Math.floor(usableWidth / (fontSize * SELECT_LABEL_AVERAGE_CHAR_RATIO));
-            return Math.max(SELECT_LABEL_MIN_LENGTH, Math.min(SELECT_LABEL_MAX_LENGTH, estimatedLength));
-        }
-
-        function fullSelectLabelForFile(filename) {
-            return filename;
-        }
-
-        function displaySelectLabelForFile(filename, source, maxLength = SELECT_LABEL_MAX_LENGTH) {
-            return truncateMiddle(filename, maxLength);
-        }
-
-        function syncSelectedSelectTitle() {
-            const selectedOption = selectEl.selectedOptions[0];
-            selectEl.title = selectedOption?.dataset.fullLabel || selectedOption?.textContent || '';
-        }
-
-        function refreshSelectOptionLabels() {
-            const maxLength = getSelectLabelMaxLength();
-            Array.from(selectEl.options).forEach((option) => {
-                const source = option.dataset.source || sourceForFile(option.value);
-                option.textContent = displaySelectLabelForFile(option.value, source, maxLength);
-                option.title = option.dataset.fullLabel || fullSelectLabelForFile(option.value, source);
-            });
-            syncSelectedSelectTitle();
-        }
-
-        async function fetchUploadedManifest() {
-            try {
-                const res = await fetch('/api/upload-manifest', {
-                    headers: { accept: 'application/json' }
-                });
-                if (!res.ok) {
-                    console.warn(`Failed to load uploaded manifest: ${res.status} ${res.statusText}`);
-                    return [];
-                }
-                const manifest = await res.json();
-                return Array.isArray(manifest.files) ? manifest.files.filter(isAllowedManifestFile) : [];
-            } catch (err) {
-                console.warn('Failed to load uploaded manifest:', err);
-                return [];
-            }
-        }
-
-        async function fetchManifest() {
-            const res = await fetch('jsx-manifest.json');
-            if (!res.ok) throw new Error('Failed to load jsx-manifest.json');
-            const manifest = await res.json();
-            if (!Array.isArray(manifest)) {
-                throw new Error('JSX manifest must be an array');
-            }
-            FILE_SOURCES.clear();
-            const staticFiles = manifest.filter(isAllowedManifestFile);
-            staticFiles.forEach((file) => FILE_SOURCES.set(file, 'static'));
-
-            const uploadedFiles = await fetchUploadedManifest();
-            uploadedFiles.forEach((file) => FILE_SOURCES.set(file, 'r2'));
-
-            ALLOWED_FILES = [...FILE_SOURCES.keys()];
-            if (ALLOWED_FILES.length === 0) {
-                throw new Error('JSX manifest does not contain any loadable files');
-            }
-            selectEl.textContent = '';
-            ALLOWED_FILES.forEach(f => {
-                const opt = document.createElement('option');
-                const source = sourceForFile(f);
-                opt.value = f;
-                opt.dataset.source = source;
-                opt.dataset.fullLabel = fullSelectLabelForFile(f, source);
-                opt.textContent = displaySelectLabelForFile(f, source, getSelectLabelMaxLength());
-                opt.title = opt.dataset.fullLabel;
-                selectEl.appendChild(opt);
-            });
-            refreshSelectOptionLabels();
-        }
-
-        const selectEl = document.getElementById('jsx-select');
-        const resetBtn = document.getElementById('reset-btn');
-        const shareUrlEl = document.getElementById('share-url');
-        const copyLinkBtn = document.getElementById('copy-link-btn');
-
-        let currentFile = null;
-        let currentFileSource = 'static';
-        let currentComponent = null;
-        let currentDefaultSettings = {};
-        let currentInitialSettings = {};
-        let currentSettings = {};
-        let currentMountKey = '';
-        let renderVersion = 0;
-
-        function isPlainObject(value) {
-            return value !== null && typeof value === 'object' && !Array.isArray(value);
-        }
-
-        function sourceForFile(filename) {
-            return FILE_SOURCES.get(filename) || 'static';
-        }
-
-        function urlForFile(filename) {
-            return sourceForFile(filename) === 'r2'
-                ? `/jsxupload/Files/${encodeURIComponent(filename)}`
-                : filename;
-        }
-
-        function deepClone(value) {
-            if (Array.isArray(value)) {
-                return value.map(deepClone);
-            }
-            if (isPlainObject(value)) {
-                const copy = {};
-                Object.keys(value).forEach((key) => {
-                    if (!isSafeObjectKey(key)) return;
-                    copy[key] = deepClone(value[key]);
-                });
-                return copy;
-            }
-            return value;
-        }
-
-        function deepEqual(a, b) {
-            if (Object.is(a, b)) return true;
-            if (typeof a !== typeof b) return false;
-            if (Array.isArray(a) && Array.isArray(b)) {
-                if (a.length !== b.length) return false;
-                for (let i = 0; i < a.length; i += 1) {
-                    if (!deepEqual(a[i], b[i])) return false;
-                }
-                return true;
-            }
-            if (isPlainObject(a) && isPlainObject(b)) {
-                const aKeys = Object.keys(a).filter(isSafeObjectKey);
-                const bKeys = Object.keys(b).filter(isSafeObjectKey);
-                if (aKeys.length !== bKeys.length) return false;
-                for (const key of aKeys) {
-                    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
-                    if (!deepEqual(a[key], b[key])) return false;
-                }
-                return true;
-            }
-            return false;
-        }
-
-        function applyOverrides(defaultValue, overrideValue) {
-            if (overrideValue === undefined) {
-                return deepClone(defaultValue);
-            }
-            if (isPlainObject(defaultValue) && isPlainObject(overrideValue)) {
-                const merged = {};
-                const keys = new Set([...Object.keys(defaultValue), ...Object.keys(overrideValue)]);
-                keys.forEach((key) => {
-                    if (!isSafeObjectKey(key)) return;
-                    merged[key] = applyOverrides(defaultValue[key], overrideValue[key]);
-                });
-                return merged;
-            }
-            return deepClone(overrideValue);
-        }
-
-        function diffFromDefaults(currentValue, defaultValue) {
-            if (deepEqual(currentValue, defaultValue)) return undefined;
-            if (Array.isArray(currentValue) && Array.isArray(defaultValue)) {
-                return deepClone(currentValue);
-            }
-            if (isPlainObject(currentValue) && isPlainObject(defaultValue)) {
-                const delta = {};
-                Object.keys(currentValue).forEach((key) => {
-                    if (!isSafeObjectKey(key)) return;
-                    const child = diffFromDefaults(currentValue[key], defaultValue[key]);
-                    if (child !== undefined) {
-                        delta[key] = child;
-                    }
-                });
-                return Object.keys(delta).length > 0 ? delta : undefined;
-            }
-            return deepClone(currentValue);
-        }
-
-        function encodeBase64Url(value) {
-            const json = JSON.stringify(value);
-            const bytes = new TextEncoder().encode(json);
-            let binary = '';
-            bytes.forEach((byte) => {
-                binary += String.fromCharCode(byte);
-            });
-            return btoa(binary)
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_')
-                .replace(/=+$/g, '');
-        }
-
-        function decodeBase64Url(value) {
-            const normalized = value
-                .replace(/-/g, '+')
-                .replace(/_/g, '/');
-            const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
-            const binary = atob(normalized + padding);
-            const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-            const json = new TextDecoder().decode(bytes);
-            return JSON.parse(json);
-        }
-
-        function parseSharedState(encoded) {
-            if (!encoded) return null;
-            if (encoded.length > MAX_SHARED_STATE_LENGTH) return null;
-            try {
-                const parsed = decodeBase64Url(encoded);
-                if (!isPlainObject(parsed) || typeof parsed.file !== 'string') return null;
-                const overrides = isPlainObject(parsed.overrides) ? parsed.overrides : {};
-                return { file: parsed.file, overrides };
-            } catch (err) {
-                console.warn('Invalid shared state in URL:', err);
-                return null;
-            }
-        }
-
-        function getStateFromUrl(urlLike) {
-            const searchParams = new URL(urlLike, window.location.origin).searchParams;
-            const sharedState = parseSharedState(searchParams.get(SHARE_PARAM));
-            const fileParam = searchParams.get('file');
-            const defaultFile = ALLOWED_FILES[0];
-            const requestedFile = sharedState?.file || fileParam || defaultFile;
-            const initialFile = ALLOWED_FILES.includes(requestedFile) ? requestedFile : defaultFile;
-            const initialOverrides = initialFile === sharedState?.file
-                ? (sharedState?.overrides || {})
-                : {};
-            return {
-                initialFile,
-                initialOverrides
-            };
-        }
-
-        function updateFileInputs(filename) {
-            const hasOption = Array.from(selectEl.options).some((opt) => opt.value === filename);
-            if (hasOption) {
-                selectEl.value = filename;
-                syncSelectedSelectTitle();
-            }
-        }
-
-        function buildShareUrl() {
-            const url = new URL(window.location.href);
-            if (currentFile) {
-                url.searchParams.set('file', currentFile);
-            } else {
-                url.searchParams.delete('file');
-            }
-            if (currentFileSource === 'r2') {
-                url.searchParams.set('source', 'r2');
-            } else {
-                url.searchParams.delete('source');
-                url.searchParams.delete('version');
-            }
-            const overrides = diffFromDefaults(currentSettings, currentDefaultSettings);
-            if (overrides && Object.keys(overrides).length > 0) {
-                url.searchParams.set(SHARE_PARAM, encodeBase64Url({
-                    file: currentFile,
-                    overrides
-                }));
-            } else {
-                url.searchParams.delete(SHARE_PARAM);
-            }
-            return url;
-        }
-
-        function updateShareUrl({ pushHistory = false } = {}) {
-            if (!currentFile) return;
-            const url = buildShareUrl();
-            shareUrlEl.value = url.toString();
-            if (pushHistory) {
-                window.history.pushState({}, '', url);
-            } else {
-                window.history.replaceState({}, '', url);
-            }
-        }
-
-        function handleSettingsChange(nextSettings) {
-            if (!isPlainObject(nextSettings)) return;
-            currentSettings = deepClone(nextSettings);
-            updateShareUrl();
-        }
-
-        function syncPageBackgroundToComponent() {
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    const componentRoot = rootElement.firstElementChild;
-                    if (!componentRoot) return;
-
-                    const computedStyles = window.getComputedStyle(componentRoot);
-                    const backgroundImage = computedStyles.backgroundImage;
-                    const backgroundColor = computedStyles.backgroundColor;
-                    const hasBackgroundImage = backgroundImage && backgroundImage !== 'none';
-                    const hasBackgroundColor = backgroundColor &&
-                        backgroundColor !== 'transparent' &&
-                        backgroundColor !== 'rgba(0, 0, 0, 0)';
-
-                    const nextBackground = hasBackgroundImage
-                        ? backgroundImage
-                        : hasBackgroundColor
-                            ? backgroundColor
-                            : DEFAULT_PAGE_BG;
-
-                    document.documentElement.style.setProperty('--viewer-bg', nextBackground);
-                });
-            });
-        }
-
-        function renderCurrentComponent() {
-            if (!currentComponent) return;
-            root.render(React.createElement(currentComponent, {
-                key: currentMountKey,
-                initialSettings: currentInitialSettings,
-                onSettingsChange: handleSettingsChange
-            }));
-            syncPageBackgroundToComponent();
-        }
-
-        async function loadJSX(filename, { initialSettingsOverrides = {}, pushHistory = true } = {}) {
-            try {
-                if (!ALLOWED_FILES.includes(filename)) {
-                    throw new Error(`Unauthorized file: ${filename}`);
-                }
-
-                root.render(React.createElement('div', { className: 'loading' }, `Loading ${filename}...`));
-
-                const sourceUrl = urlForFile(filename);
-                const response = await fetch(sourceUrl);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch ${sourceUrl}: ${response.status} ${response.statusText}`);
-                }
-                const jsxCode = await response.text();
-
-                // Transpile using Babel
-                let transpiled = Babel.transform(jsxCode, {
-                    presets: [
-                        ['react', { runtime: 'automatic' }] // Use new JSX transform
-                    ],
-                    filename: filename
-                }).code;
-
-                // Fix relative imports for blob URL
-                const fileUrl = new URL(sourceUrl, window.location.href).href;
-                transpiled = transpiled.replace(/(import|export|from)\s+['"](\.[^'"]+)['"]/g, (match, p1, p2) => {
-                    const absUrl = new URL(p2, fileUrl).href;
-                    return `${p1} '${absUrl}'`;
-                });
-                transpiled = transpiled.replace(/import\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g, (match, p1) => {
-                    const absUrl = new URL(p1, fileUrl).href;
-                    return `import('${absUrl}')`;
-                });
-
-                // Create a module blob
-                const blob = new Blob([transpiled], { type: 'application/javascript' });
-                const blobUrl = URL.createObjectURL(blob);
-
-                // Dynamically import the transpiled module
-                const module = await import(blobUrl);
-
-                // Cleanup blob URL
-                URL.revokeObjectURL(blobUrl);
-
-                // Render the default export
-                const Component = module.default;
-                if (!Component) {
-                    throw new Error(`No default export found in ${filename}`);
-                }
-
-                currentFile = filename;
-                currentFileSource = sourceForFile(filename);
-                currentComponent = Component;
-                updateFileInputs(filename);
-
-                const defaults = isPlainObject(module.DEFAULT_SETTINGS) ? module.DEFAULT_SETTINGS : {};
-                currentDefaultSettings = deepClone(defaults);
-                currentInitialSettings = applyOverrides(currentDefaultSettings, initialSettingsOverrides);
-                currentSettings = deepClone(currentInitialSettings);
-
-                currentMountKey = `${filename}:${++renderVersion}`;
-                renderCurrentComponent();
-                updateShareUrl({ pushHistory });
-
-            } catch (err) {
-                console.error(err);
-                root.render(
-                    React.createElement('div', { className: 'error-message' },
-                        `Error loading ${filename}:\n\n${err.message}\n\nCheck the browser console for more details.`
-                    )
-                );
-                syncPageBackgroundToComponent();
-            }
-        }
-
-        selectEl.addEventListener('change', (e) => {
-            syncSelectedSelectTitle();
-            if (e.target.value) {
-                loadJSX(e.target.value, { pushHistory: true });
-            }
-        });
-
-        window.addEventListener('resize', refreshSelectOptionLabels);
-
-        resetBtn.addEventListener('click', () => {
-            if (!currentComponent || !currentFile) return;
-            currentInitialSettings = deepClone(currentDefaultSettings);
-            currentSettings = deepClone(currentDefaultSettings);
-            currentMountKey = `${currentFile}:${++renderVersion}`;
-            renderCurrentComponent();
-            updateShareUrl();
-        });
-
-        copyLinkBtn.addEventListener('click', async () => {
-            const link = shareUrlEl.value;
-            if (!link) return;
-            try {
-                await navigator.clipboard.writeText(link);
-                // Optional: show a quick toast or change button state briefly
-                const originalText = copyLinkBtn.querySelector('span').textContent;
-                copyLinkBtn.querySelector('span').textContent = 'Copied!';
-                setTimeout(() => {
-                    copyLinkBtn.querySelector('span').textContent = originalText;
-                }, 2000);
-            } catch (err) {
-                console.warn('Clipboard API unavailable, falling back to text selection.', err);
-                shareUrlEl.style.display = 'block'; // temporarily show to select
-                shareUrlEl.focus();
-                shareUrlEl.select();
-                document.execCommand('copy');
-                shareUrlEl.style.display = 'none'; // hide again
-
-                const originalText = copyLinkBtn.querySelector('span').textContent;
-                copyLinkBtn.querySelector('span').textContent = 'Copied!';
-                setTimeout(() => {
-                    copyLinkBtn.querySelector('span').textContent = originalText;
-                }, 2000);
-            }
-        });
-
-        window.addEventListener('popstate', () => {
-            const { initialFile, initialOverrides } = getStateFromUrl(window.location.href);
-            loadJSX(initialFile, {
-                initialSettingsOverrides: initialOverrides,
-                pushHistory: false
-            });
-        });
-
-        // Initialize: fetch manifest, then load from URL param or first file
-        (async () => {
-            try {
-                await fetchManifest();
-            } catch (err) {
-                root.render(React.createElement('div', { className: 'error-message' },
-                    `Failed to load JSX manifest:\n\n${err.message}`));
-                return;
-            }
-            const { initialFile, initialOverrides } = getStateFromUrl(window.location.href);
-
-            updateFileInputs(initialFile);
-            loadJSX(initialFile, {
-                initialSettingsOverrides: initialOverrides,
-                pushHistory: false
-            });
-        })();
     </script>
 </body>
 
