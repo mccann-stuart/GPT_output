@@ -158,24 +158,25 @@ async function readUploadFiles(request) {
 
 async function storeUploadedFiles(env, uploads) {
   const bucket = getUploadBucket(env);
-  const storedFiles = [];
-  for (const upload of uploads) {
-    const key = uploadObjectKey(upload.name);
-    const object = await bucket.put(key, upload.text, {
-      httpMetadata: {
-        contentType: contentTypeForFile(upload.name),
-        cacheControl: 'no-cache',
-      },
-      customMetadata: {
-        uploadedBy: 'gpt-outputs-viewer',
-      },
-    });
-    storedFiles.push({
-      file: upload.name,
-      key,
-      version: objectVersion(object),
-    });
-  }
+  const storedFiles = await Promise.all(
+    uploads.map(async (upload) => {
+      const key = uploadObjectKey(upload.name);
+      const object = await bucket.put(key, upload.text, {
+        httpMetadata: {
+          contentType: contentTypeForFile(upload.name),
+          cacheControl: 'no-cache',
+        },
+        customMetadata: {
+          uploadedBy: 'gpt-outputs-viewer',
+        },
+      });
+      return {
+        file: upload.name,
+        key,
+        version: objectVersion(object),
+      };
+    })
+  );
   return storedFiles;
 }
 
