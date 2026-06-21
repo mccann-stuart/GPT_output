@@ -8,12 +8,20 @@ const SAFE_DELIVERABLE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(jsx|mjs)$/;
 const LOCAL_IMPORT_PATTERN = /\b(?:import\s+[^'"]*?from|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
 const R2_UPLOAD_PREFIX = 'jsxupload/Files/';
 const R2_ROUTE_PREFIX = '/jsxupload/Files/';
-const BOE_IADB_CSV_ENDPOINT = 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp';
-const BOE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-// The BoE site is behind Akamai bot protection. Requests from datacenter IPs
-// (e.g. the Cloudflare edge) without a browser User-Agent get served a block
-// page, so the live fetch must present a realistic browser UA.
-const BOE_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+// The Bank of England's own IADB CSV endpoint sits behind Akamai bot protection
+// that blocks the Cloudflare Worker egress (it returns an HTTP 500 challenge
+// page, regardless of request headers), so it cannot be fetched from the edge.
+// FRED (Federal Reserve Bank of St. Louis) mirrors the exact BoE SONIA series
+// (IUDSOIA, sourced from the Bank of England) as a keyless CSV and is reachable
+// from Workers, so live SONIA — the value that actually drives the model — is
+// sourced from there.
+const FRED_CSV_ENDPOINT = 'https://fred.stlouisfed.org/graph/fredgraph.csv';
+const FRED_SONIA_SERIES = 'IUDSOIA';
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// BoE Bank Rate has no keyless live daily mirror on FRED (IUDBEDR is absent and
+// BOERUKM was discontinued in 2017). It is the MPC policy rate, which only moves
+// at scheduled meetings, so the current value is kept here and updated on change.
+const CURRENT_BANK_RATE = 3.75;
 const LIVE_INDICATOR_FALLBACK = {
   bankRate: 3.75,
   sonia: 3.7303,
@@ -309,55 +317,57 @@ async function readJsonPayload(request) {
   }
 }
 
-function formatBoeDate(date) {
-  return `${String(date.getDate()).padStart(2, '0')}/${BOE_MONTHS[date.getMonth()]}/${date.getFullYear()}`;
+function isoDate(date) {
+  return date.toISOString().slice(0, 10);
 }
 
-function buildBoeCsvUrl(today = new Date()) {
-  const thirtyDaysAgo = new Date(today);
-  thirtyDaysAgo.setDate(today.getDate() - 30);
+function buildFredCsvUrl(seriesId, today = new Date()) {
+  const start = new Date(today);
+  start.setDate(today.getDate() - 45);
 
   const params = new URLSearchParams({
-    'csv.x': 'yes',
-    Datefrom: formatBoeDate(thirtyDaysAgo),
-    Dateto: formatBoeDate(today),
-    SeriesCodes: 'IUDBEDR,IUDSOIA',
-    CSVF: 'TN',
-    UsingCodes: 'Y',
+    id: seriesId,
+    cosd: isoDate(start),
+    coed: isoDate(today),
   });
 
-  return `${BOE_IADB_CSV_ENDPOINT}?${params.toString()}`;
+  return `${FRED_CSV_ENDPOINT}?${params.toString()}`;
 }
 
-function parseBoECsv(csvText) {
+// FRED renders the requested date range as "observation_date,<SERIES_ID>" with
+// one row per day and missing observations as ".". Return the most recent row
+// that carries a numeric value.
+function parseFredCsv(csvText, seriesId) {
   const lines = csvText.split('\n').map(line => line.trim()).filter(Boolean);
   if (lines.length < 2) return null;
 
   const headers = lines[0].split(',');
-  const bankRateIdx = headers.indexOf('IUDBEDR');
-  const soniaIdx = headers.indexOf('IUDSOIA');
-  const dateIdx = headers.indexOf('DATE');
+  const dateIdx = headers.indexOf('observation_date');
+  const valueIdx = headers.indexOf(seriesId);
 
-  if (bankRateIdx === -1 || soniaIdx === -1 || dateIdx === -1) {
+  if (dateIdx === -1 || valueIdx === -1) {
     return null;
   }
 
   for (let i = lines.length - 1; i >= 1; i--) {
     const cols = lines[i].split(',');
-    const dateVal = cols[dateIdx];
-    const bankRateVal = parseFloat(cols[bankRateIdx]);
-    const soniaVal = parseFloat(cols[soniaIdx]);
-
-    if (!isNaN(bankRateVal) && !isNaN(soniaVal)) {
-      return {
-        bankRate: bankRateVal,
-        sonia: soniaVal,
-        date: dateVal
-      };
+    const value = parseFloat(cols[valueIdx]);
+    if (!isNaN(value)) {
+      return { value, date: cols[dateIdx] };
     }
   }
 
   return null;
+}
+
+// Convert a FRED ISO observation date (YYYY-MM-DD) to the "17 Jun 2026" style
+// the indicator board renders.
+function formatDisplayDate(isoStr) {
+  const [year, month, day] = String(isoStr).split('-').map(Number);
+  if (!year || !month || !day || month < 1 || month > 12) {
+    return isoStr;
+  }
+  return `${String(day).padStart(2, '0')} ${MONTHS_SHORT[month - 1]} ${year}`;
 }
 
 async function handleLiveIndicators(request, env) {
@@ -366,22 +376,15 @@ async function handleLiveIndicators(request, env) {
   }
 
   const debug = new URL(request.url).searchParams.get('debug') === '1';
-  const diag = { boeUrl: buildBoeCsvUrl() };
+  const fredUrl = buildFredCsvUrl(FRED_SONIA_SERIES);
+  const diag = { fredUrl };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(diag.boeUrl, {
+    const res = await fetch(fredUrl, {
       headers: {
-        'User-Agent': BOE_USER_AGENT,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/csv,*/*;q=0.8',
-        'Accept-Language': 'en-GB,en;q=0.9',
-        Referer: 'https://www.bankofengland.co.uk/boeapps/database/',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'same-origin',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1'
+        Accept: 'text/csv,text/plain;q=0.9,*/*;q=0.5'
       },
       signal: controller.signal
     });
@@ -391,37 +394,36 @@ async function handleLiveIndicators(request, env) {
 
     const csvText = await res.text();
     diag.bodyLength = csvText.length;
-    diag.bodyHead = csvText.slice(0, 600);
+    diag.bodyHead = csvText.slice(0, 300);
 
     if (!res.ok) {
-      throw new Error(`BoE request failed with status: ${res.status}`);
+      throw new Error(`FRED request failed with status: ${res.status}`);
     }
 
-    const parsed = parseBoECsv(csvText);
+    const parsed = parseFredCsv(csvText, FRED_SONIA_SERIES);
 
-    if (!parsed || parsed.bankRate === null || parsed.sonia === null) {
-      throw new Error('Failed to parse required rates from BoE response');
+    if (!parsed) {
+      throw new Error('Failed to parse SONIA from FRED response');
     }
 
-    const bankRate = parsed.bankRate;
-    const sonia = parsed.sonia;
+    const sonia = parsed.value;
     const swap2y = parseFloat((sonia + 0.29).toFixed(4));
     const swap5y = parseFloat((sonia + 0.32).toFixed(4));
 
     return json({
-      bankRate,
+      bankRate: CURRENT_BANK_RATE,
       sonia,
       swap2y,
       swap5y,
       gilt2y: swap2y,
       gilt5y: swap5y,
-      lastUpdated: parsed.date,
+      lastUpdated: formatDisplayDate(parsed.date),
       source: 'live',
       ...(debug ? { diag } : {})
     });
 
   } catch (err) {
-    console.warn('Failed to fetch live indicators from Bank of England, returning fallback:', err.message);
+    console.warn('Failed to fetch live indicators from FRED, returning fallback:', err.message);
     if (debug) {
       diag.error = err && err.message ? err.message : String(err);
       diag.errorName = err && err.name ? err.name : undefined;
