@@ -363,6 +363,7 @@ export default function MortgageRatePredictor() {
   const [term, setTerm] = useState("5y"); // which fix length to model
   const [horizon, setHorizon] = useState("12m"); // which prediction horizon
   const [openLever, setOpenLever] = useState(null);
+  const [aprcOpen, setAprcOpen] = useState(false); // Headline vs. APRC section starts collapsed
 
   // APRC Calculator State
   const [calcLoan, setCalcLoan] = useState(250000);
@@ -630,14 +631,28 @@ export default function MortgageRatePredictor() {
 
         {/* Headline vs. APRC Section */}
         <section style={{ marginTop: 32, borderTop: `2px solid ${PALETTE.ink}`, paddingTop: 28 }}>
-          <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: PALETTE.brass, marginBottom: 12 }}>
-            Regulatory Costs & Comparisons
+          <div
+            role="button"
+            tabIndex={0}
+            aria-expanded={aprcOpen}
+            aria-controls="aprc-detail"
+            onClick={() => setAprcOpen((o) => !o)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setAprcOpen((o) => !o); } }}
+            style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center", cursor: "pointer" }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: PALETTE.brass, marginBottom: 12 }}>
+                Regulatory Costs & Comparisons
+              </div>
+              <h2 className="fr" style={{ fontSize: 24, fontWeight: 500, margin: 0 }}>
+                Headline Rate vs. <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> Explained
+              </h2>
+            </div>
+            <span className="mono" style={{ fontSize: 11, color: PALETTE.slate, whiteSpace: "nowrap" }}>{aprcOpen ? "close −" : "expand +"}</span>
           </div>
-          <h2 className="fr" style={{ fontSize: 24, fontWeight: 500, margin: "0 0 16px" }}>
-            Headline Rate vs. <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> Explained
-          </h2>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))", gap: 28 }}>
+          {aprcOpen && (
+          <div id="aprc-detail" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))", gap: 28, marginTop: 20 }}>
             {/* Left Column: Educational Text */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <p style={{ fontSize: 14.5, lineHeight: 1.55, color: PALETTE.ink, margin: 0 }}>
@@ -828,6 +843,7 @@ export default function MortgageRatePredictor() {
               </div>
             </div>
           </div>
+          )}
         </section>
 
         <div style={{ marginTop: 32 }}>
