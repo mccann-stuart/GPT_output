@@ -165,6 +165,20 @@ test('worker rejects non-json api payloads', async () => {
   assert.match(body.error, /application\/json/i);
 });
 
+test('worker rejects malformed json api payloads', async () => {
+  const request = new Request('https://example.com/api/simulate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{ malformed_json: true ',
+  });
+
+  const response = await worker.fetch(request, makeEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /valid JSON/i);
+});
+
 test('worker rejects oversized api payloads', async () => {
   const request = new Request('https://example.com/api/simulate', {
     method: 'POST',
