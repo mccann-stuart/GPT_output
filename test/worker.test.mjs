@@ -434,7 +434,9 @@ test('worker returns live indicators data for GET /api/live-indicators when fetc
   assert.equal(body.source, 'live');
   assert.match(capturedRequest.url, /boeapps\/database\/_iadb-FromShowColumns\.asp/);
   assert.match(capturedRequest.url, /SeriesCodes=IUDBEDR%2CIUDSOIA/);
-  assert.equal(capturedRequest.init.headers['User-Agent'], undefined);
+  // BoE sits behind Akamai bot protection: the fetch must send a browser
+  // User-Agent or the Cloudflare edge gets served a block page (see worker).
+  assert.match(capturedRequest.init.headers['User-Agent'], /Mozilla\/5\.0/);
   assert.match(capturedRequest.init.headers.Accept, /text\/csv/);
 });
 
