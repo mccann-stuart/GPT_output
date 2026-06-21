@@ -382,6 +382,21 @@ async function handleLiveIndicators(request, env) {
   const fredUrl = buildFredCsvUrl(FRED_SONIA_SERIES);
   const diag = { fredUrl };
 
+  // TEMP probe: can the Worker reach the official FRED API host at all? A dummy
+  // key should yield a real 400 (reachable) rather than a 520 (blocked/reset).
+  if (debug) {
+    try {
+      const probeUrl = 'https://api.stlouisfed.org/fred/series/observations?series_id=IUDSOIA&api_key=0123456789abcdef0123456789abcdef&file_type=json&limit=1&sort_order=desc';
+      const pc = new AbortController();
+      const pt = setTimeout(() => pc.abort(), 7000);
+      const pr = await fetch(probeUrl, { headers: { 'User-Agent': LIVE_DATA_USER_AGENT, Accept: 'application/json' }, signal: pc.signal });
+      clearTimeout(pt);
+      diag.apiProbe = { status: pr.status, contentType: pr.headers.get('content-type'), bodyHead: (await pr.text()).slice(0, 200) };
+    } catch (e) {
+      diag.apiProbe = { error: e && e.message ? e.message : String(e) };
+    }
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
