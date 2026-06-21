@@ -374,7 +374,14 @@ async function handleLiveIndicators(request, env) {
     const res = await fetch(diag.boeUrl, {
       headers: {
         'User-Agent': BOE_USER_AGENT,
-        Accept: 'text/csv,application/csv,text/plain;q=0.9,*/*;q=0.5'
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/csv,*/*;q=0.8',
+        'Accept-Language': 'en-GB,en;q=0.9',
+        Referer: 'https://www.bankofengland.co.uk/boeapps/database/',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1'
       },
       signal: controller.signal
     });
