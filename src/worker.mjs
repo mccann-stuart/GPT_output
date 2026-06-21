@@ -10,6 +10,10 @@ const R2_UPLOAD_PREFIX = 'jsxupload/Files/';
 const R2_ROUTE_PREFIX = '/jsxupload/Files/';
 const BOE_IADB_CSV_ENDPOINT = 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp';
 const BOE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// The BoE site is behind Akamai bot protection. Requests from datacenter IPs
+// (e.g. the Cloudflare edge) without a browser User-Agent get served a block
+// page, so the live fetch must present a realistic browser UA.
+const BOE_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const LIVE_INDICATOR_FALLBACK = {
   bankRate: 3.75,
   sonia: 3.7303,
@@ -366,6 +370,7 @@ async function handleLiveIndicators(request, env) {
   try {
     const res = await fetch(buildBoeCsvUrl(), {
       headers: {
+        'User-Agent': BOE_USER_AGENT,
         Accept: 'text/csv,application/csv,text/plain;q=0.9,*/*;q=0.5'
       },
       signal: controller.signal
