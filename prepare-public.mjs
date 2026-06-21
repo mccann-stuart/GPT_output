@@ -315,5 +315,3 @@ while (queue.length > 0) {
 }
 
 await vendorBrowserModules();
-
-console.log(`public/ ready with ${seen.size + 3 + SUPPORTED_BROWSER_MODULES.length + 2} assets`);
