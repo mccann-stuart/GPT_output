@@ -454,6 +454,11 @@ export function runSimulation(rawParams, { random = Math.random } = {}) {
   const order = { arrive: 0, brk_e: 1, answer: 2, brk_s: 3, end: 4, abandon: 5 };
   events.sort((a, b) => (a.t - b.t) || (order[a.type] - order[b.type]));
 
+  const resultsByAgent = Array.from({ length: numAgents }, () => []);
+  for (const result of results) {
+    resultsByAgent[result.agent].push(result);
+  }
+
   const intLen = 30;
   const numInts = Math.ceil(shiftLength / intLen);
   const intervals = [];
@@ -490,10 +495,7 @@ export function runSimulation(rawParams, { random = Math.random } = {}) {
 
       avail += Math.min(intLen, shiftEnd - is) - brkInInt;
 
-      for (const result of results) {
-        if (result.agent !== a) {
-          continue;
-        }
+      for (const result of resultsByAgent[a]) {
         const overlapStart = Math.max(result.answer, is);
         const overlapEnd = Math.min(result.end, ie);
         if (overlapEnd <= overlapStart) {
@@ -534,7 +536,7 @@ export function runSimulation(rawParams, { random = Math.random } = {}) {
   for (let a = 0; a < numAgents; a++) {
     const brkT = allBrks[a].reduce((sum, brk) => sum + (Math.min(brk.e, shiftEnd) - brk.s), 0);
     tAvail += shiftLength - Math.max(0, brkT);
-    for (const result of results.filter((item) => item.agent === a)) {
+    for (const result of resultsByAgent[a]) {
       let callTime = result.end - result.answer;
       for (const brk of allBrks[a]) {
         const overlapStart = Math.max(brk.s, result.answer);
