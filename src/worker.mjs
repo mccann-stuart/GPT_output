@@ -17,6 +17,9 @@ const R2_ROUTE_PREFIX = '/jsxupload/Files/';
 // sourced from there.
 const FRED_CSV_ENDPOINT = 'https://fred.stlouisfed.org/graph/fredgraph.csv';
 const FRED_SONIA_SERIES = 'IUDSOIA';
+// FRED's edge rejects requests that omit a User-Agent (the connection is reset,
+// surfaced to the Worker as an HTTP 520), so the live fetch must send one.
+const LIVE_DATA_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // BoE Bank Rate has no keyless live daily mirror on FRED (IUDBEDR is absent and
 // BOERUKM was discontinued in 2017). It is the MPC policy rate, which only moves
@@ -384,6 +387,7 @@ async function handleLiveIndicators(request, env) {
   try {
     const res = await fetch(fredUrl, {
       headers: {
+        'User-Agent': LIVE_DATA_USER_AGENT,
         Accept: 'text/csv,text/plain;q=0.9,*/*;q=0.5'
       },
       signal: controller.signal
