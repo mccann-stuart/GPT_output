@@ -8,17 +8,20 @@ const SAFE_DELIVERABLE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(jsx|mjs)$/;
 const LOCAL_IMPORT_PATTERN = /\b(?:import\s+[^'"]*?from|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
 const R2_UPLOAD_PREFIX = 'jsxupload/Files/';
 const R2_ROUTE_PREFIX = '/jsxupload/Files/';
+// Live data source.
+//
 // The Bank of England's own IADB CSV endpoint sits behind Akamai bot protection
-// that blocks the Cloudflare Worker egress (it returns an HTTP 500 challenge
-// page, regardless of request headers), so it cannot be fetched from the edge.
-// FRED (Federal Reserve Bank of St. Louis) mirrors the exact BoE SONIA series
-// (IUDSOIA, sourced from the Bank of England) as a keyless CSV and is reachable
-// from Workers, so live SONIA — the value that actually drives the model — is
-// sourced from there.
-const FRED_CSV_ENDPOINT = 'https://fred.stlouisfed.org/graph/fredgraph.csv';
+// that blocks the Cloudflare Worker egress entirely (HTTP 500 challenge page,
+// regardless of request headers). FRED's public graph-download endpoint
+// (fred.stlouisfed.org/graph/fredgraph.csv) is likewise blocked from the edge
+// (the connection is reset, surfaced as HTTP 520). FRED's official developer
+// API host (api.stlouisfed.org) IS reachable from Workers and mirrors the exact
+// BoE SONIA series (IUDSOIA, sourced from the Bank of England), so live SONIA —
+// the value that actually drives the model — is sourced from there. The API
+// requires a free key, supplied via the FRED_API_KEY Worker secret; without it
+// the endpoint serves the static fallback below.
+const FRED_API_ENDPOINT = 'https://api.stlouisfed.org/fred/series/observations';
 const FRED_SONIA_SERIES = 'IUDSOIA';
-// FRED's edge rejects requests that omit a User-Agent (the connection is reset,
-// surfaced to the Worker as an HTTP 520), so the live fetch must send one.
 const LIVE_DATA_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 // BoE Bank Rate has no keyless live daily mirror on FRED (IUDBEDR is absent and
@@ -324,42 +327,33 @@ function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function buildFredCsvUrl(seriesId, today = new Date()) {
+function buildFredApiUrl(seriesId, apiKey, today = new Date()) {
   const start = new Date(today);
   start.setDate(today.getDate() - 45);
 
   const params = new URLSearchParams({
-    id: seriesId,
-    cosd: isoDate(start),
-    coed: isoDate(today),
+    series_id: seriesId,
+    api_key: apiKey,
+    file_type: 'json',
+    observation_start: isoDate(start),
+    sort_order: 'desc',
+    limit: '10',
   });
 
-  return `${FRED_CSV_ENDPOINT}?${params.toString()}`;
+  return `${FRED_API_ENDPOINT}?${params.toString()}`;
 }
 
-// FRED renders the requested date range as "observation_date,<SERIES_ID>" with
-// one row per day and missing observations as ".". Return the most recent row
-// that carries a numeric value.
-function parseFredCsv(csvText, seriesId) {
-  const lines = csvText.split('\n').map(line => line.trim()).filter(Boolean);
-  if (lines.length < 2) return null;
-
-  const headers = lines[0].split(',');
-  const dateIdx = headers.indexOf('observation_date');
-  const valueIdx = headers.indexOf(seriesId);
-
-  if (dateIdx === -1 || valueIdx === -1) {
-    return null;
-  }
-
-  for (let i = lines.length - 1; i >= 1; i--) {
-    const cols = lines[i].split(',');
-    const value = parseFloat(cols[valueIdx]);
+// The FRED API returns { observations: [{ date, value }, ...] }. With
+// sort_order=desc the newest observation is first; missing values are rendered
+// as ".". Return the most recent observation that carries a numeric value.
+function parseFredObservations(payload) {
+  const observations = payload && Array.isArray(payload.observations) ? payload.observations : [];
+  for (const observation of observations) {
+    const value = parseFloat(observation?.value);
     if (!isNaN(value)) {
-      return { value, date: cols[dateIdx] };
+      return { value, date: observation.date };
     }
   }
-
   return null;
 }
 
@@ -378,51 +372,31 @@ async function handleLiveIndicators(request, env) {
     return errorResponse(405, 'Method not allowed');
   }
 
-  const debug = new URL(request.url).searchParams.get('debug') === '1';
-  const fredUrl = buildFredCsvUrl(FRED_SONIA_SERIES);
-  const diag = { fredUrl };
-
-  // TEMP probe: can the Worker reach the official FRED API host at all? A dummy
-  // key should yield a real 400 (reachable) rather than a 520 (blocked/reset).
-  if (debug) {
-    try {
-      const probeUrl = 'https://api.stlouisfed.org/fred/series/observations?series_id=IUDSOIA&api_key=0123456789abcdef0123456789abcdef&file_type=json&limit=1&sort_order=desc';
-      const pc = new AbortController();
-      const pt = setTimeout(() => pc.abort(), 7000);
-      const pr = await fetch(probeUrl, { headers: { 'User-Agent': LIVE_DATA_USER_AGENT, Accept: 'application/json' }, signal: pc.signal });
-      clearTimeout(pt);
-      diag.apiProbe = { status: pr.status, contentType: pr.headers.get('content-type'), bodyHead: (await pr.text()).slice(0, 200) };
-    } catch (e) {
-      diag.apiProbe = { error: e && e.message ? e.message : String(e) };
-    }
+  const apiKey = env.FRED_API_KEY;
+  if (!apiKey) {
+    console.warn('FRED_API_KEY is not configured; serving fallback indicators.');
+    return json(LIVE_INDICATOR_FALLBACK);
   }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(fredUrl, {
+    const res = await fetch(buildFredApiUrl(FRED_SONIA_SERIES, apiKey), {
       headers: {
         'User-Agent': LIVE_DATA_USER_AGENT,
-        Accept: 'text/csv,text/plain;q=0.9,*/*;q=0.5'
+        Accept: 'application/json'
       },
       signal: controller.signal
     });
 
-    diag.status = res.status;
-    diag.contentType = res.headers.get('content-type');
-
-    const csvText = await res.text();
-    diag.bodyLength = csvText.length;
-    diag.bodyHead = csvText.slice(0, 300);
-
     if (!res.ok) {
-      throw new Error(`FRED request failed with status: ${res.status}`);
+      throw new Error(`FRED API request failed with status: ${res.status}`);
     }
 
-    const parsed = parseFredCsv(csvText, FRED_SONIA_SERIES);
+    const parsed = parseFredObservations(await res.json());
 
     if (!parsed) {
-      throw new Error('Failed to parse SONIA from FRED response');
+      throw new Error('FRED API response contained no usable SONIA observation');
     }
 
     const sonia = parsed.value;
@@ -437,17 +411,11 @@ async function handleLiveIndicators(request, env) {
       gilt2y: swap2y,
       gilt5y: swap5y,
       lastUpdated: formatDisplayDate(parsed.date),
-      source: 'live',
-      ...(debug ? { diag } : {})
+      source: 'live'
     });
 
   } catch (err) {
     console.warn('Failed to fetch live indicators from FRED, returning fallback:', err.message);
-    if (debug) {
-      diag.error = err && err.message ? err.message : String(err);
-      diag.errorName = err && err.name ? err.name : undefined;
-      return json({ ...LIVE_INDICATOR_FALLBACK, diag });
-    }
     return json(LIVE_INDICATOR_FALLBACK);
   } finally {
     clearTimeout(timeoutId);

@@ -408,21 +408,34 @@ test('worker returns 404 for missing R2 uploaded files', async () => {
   assert.match(body.error, /not found/i);
 });
 
+function makeLiveEnv() {
+  return { ...makeEnv(), FRED_API_KEY: 'test-fred-key' };
+}
+
+function fredObservationsResponse(observations) {
+  return new Response(JSON.stringify({ observations }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 test('worker returns live indicators data for GET /api/live-indicators when fetch succeeds', async () => {
   let capturedRequest;
   globalThis.fetch = async (url, init) => {
     capturedRequest = { url: String(url), init };
-    if (url.includes('bankofengland.co.uk')) {
-      return new Response(
-        `DATE,IUDBEDR,IUDSOIA\n15 Jun 2026,3.75,3.7296\n16 Jun 2026,3.75,3.7304\n17 Jun 2026,3.75,3.7303\n`,
-        { status: 200 }
-      );
+    if (String(url).includes('api.stlouisfed.org')) {
+      // FRED API with sort_order=desc returns newest observation first.
+      return fredObservationsResponse([
+        { date: '2026-06-17', value: '3.7303' },
+        { date: '2026-06-16', value: '3.7304' },
+        { date: '2026-06-15', value: '3.7296' },
+      ]);
     }
     throw new Error(`Unexpected fetch in test: ${url}`);
   };
 
   const request = new Request('https://example.com/api/live-indicators');
-  const response = await worker.fetch(request, makeEnv(), {});
+  const response = await worker.fetch(request, makeLiveEnv(), {});
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -432,27 +445,29 @@ test('worker returns live indicators data for GET /api/live-indicators when fetc
   assert.equal(body.swap5y, 4.0503); // sonia + 0.32
   assert.equal(body.lastUpdated, '17 Jun 2026');
   assert.equal(body.source, 'live');
-  assert.match(capturedRequest.url, /boeapps\/database\/_iadb-FromShowColumns\.asp/);
-  assert.match(capturedRequest.url, /SeriesCodes=IUDBEDR%2CIUDSOIA/);
-  // BoE sits behind Akamai bot protection: the fetch must send a browser
-  // User-Agent or the Cloudflare edge gets served a block page (see worker).
+  // BoE's own endpoint is Akamai-blocked from the Worker; SONIA is sourced from
+  // FRED's official API (reachable from the edge), which requires the key.
+  assert.match(capturedRequest.url, /api\.stlouisfed\.org\/fred\/series\/observations/);
+  assert.match(capturedRequest.url, /series_id=IUDSOIA/);
+  assert.match(capturedRequest.url, /api_key=test-fred-key/);
+  assert.match(capturedRequest.url, /file_type=json/);
   assert.match(capturedRequest.init.headers['User-Agent'], /Mozilla\/5\.0/);
-  assert.match(capturedRequest.init.headers.Accept, /text\/csv/);
 });
 
-test('worker uses the latest complete live indicators row when the newest row is partial', async () => {
+test('worker uses the latest complete live indicators observation when the newest is missing', async () => {
   globalThis.fetch = async (url) => {
-    if (url.includes('bankofengland.co.uk')) {
-      return new Response(
-        `DATE,IUDBEDR,IUDSOIA\n16 Jun 2026,3.75,3.7304\n17 Jun 2026,3.75,3.7303\n18 Jun 2026,3.75,\n`,
-        { status: 200 }
-      );
+    if (String(url).includes('api.stlouisfed.org')) {
+      return fredObservationsResponse([
+        { date: '2026-06-18', value: '.' },
+        { date: '2026-06-17', value: '3.7303' },
+        { date: '2026-06-16', value: '3.7304' },
+      ]);
     }
     throw new Error(`Unexpected fetch in test: ${url}`);
   };
 
   const request = new Request('https://example.com/api/live-indicators');
-  const response = await worker.fetch(request, makeEnv(), {});
+  const response = await worker.fetch(request, makeLiveEnv(), {});
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -464,14 +479,14 @@ test('worker uses the latest complete live indicators row when the newest row is
 
 test('worker returns fallback indicators data for GET /api/live-indicators when fetch fails', async () => {
   globalThis.fetch = async (url) => {
-    if (url.includes('bankofengland.co.uk')) {
+    if (String(url).includes('api.stlouisfed.org')) {
       return new Response('internal error', { status: 500 });
     }
     throw new Error(`Unexpected fetch in test: ${url}`);
   };
 
   const request = new Request('https://example.com/api/live-indicators');
-  const response = await worker.fetch(request, makeEnv(), {});
+  const response = await worker.fetch(request, makeLiveEnv(), {});
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -481,6 +496,22 @@ test('worker returns fallback indicators data for GET /api/live-indicators when 
   assert.equal(body.swap5y, 4.05);
   assert.equal(body.lastUpdated, '17 Jun 2026');
   assert.equal(body.source, 'fallback');
+});
+
+test('worker returns fallback indicators without fetching when FRED_API_KEY is absent', async () => {
+  let fetched = false;
+  globalThis.fetch = async () => {
+    fetched = true;
+    throw new Error('live indicators must not fetch without an API key');
+  };
+
+  const request = new Request('https://example.com/api/live-indicators');
+  const response = await worker.fetch(request, makeEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.source, 'fallback');
+  assert.equal(fetched, false);
 });
 
 test('worker returns 405 for non-GET live-indicators requests', async () => {
