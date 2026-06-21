@@ -393,3 +393,57 @@ test('worker returns 404 for missing R2 uploaded files', async () => {
   assert.equal(response.status, 404);
   assert.match(body.error, /not found/i);
 });
+
+test('worker returns live indicators data for GET /api/live-indicators when fetch succeeds', async () => {
+  globalThis.fetch = async (url) => {
+    if (url.includes('bankofengland.co.uk')) {
+      return new Response(
+        `DATE,IUDBEDR,IUDSOIA\n15 Jun 2026,3.75,3.7296\n16 Jun 2026,3.75,3.7304\n17 Jun 2026,3.75,3.7303\n`,
+        { status: 200 }
+      );
+    }
+    throw new Error(`Unexpected fetch in test: ${url}`);
+  };
+
+  const request = new Request('https://example.com/api/live-indicators');
+  const response = await worker.fetch(request, makeEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.bankRate, 3.75);
+  assert.equal(body.sonia, 3.7303);
+  assert.equal(body.swap2y, 4.0203); // sonia + 0.29
+  assert.equal(body.swap5y, 4.0503); // sonia + 0.32
+  assert.equal(body.lastUpdated, '17 Jun 2026');
+  assert.equal(body.source, 'live');
+});
+
+test('worker returns fallback indicators data for GET /api/live-indicators when fetch fails', async () => {
+  globalThis.fetch = async (url) => {
+    if (url.includes('bankofengland.co.uk')) {
+      return new Response('internal error', { status: 500 });
+    }
+    throw new Error(`Unexpected fetch in test: ${url}`);
+  };
+
+  const request = new Request('https://example.com/api/live-indicators');
+  const response = await worker.fetch(request, makeEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.bankRate, 3.75);
+  assert.equal(body.sonia, 3.7303);
+  assert.equal(body.swap2y, 4.02);
+  assert.equal(body.swap5y, 4.05);
+  assert.equal(body.lastUpdated, '17 Jun 2026');
+  assert.equal(body.source, 'fallback');
+});
+
+test('worker returns 405 for non-GET live-indicators requests', async () => {
+  const request = new Request('https://example.com/api/live-indicators', { method: 'POST' });
+  const response = await worker.fetch(request, makeEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 405);
+  assert.match(body.error, /method not allowed/i);
+});

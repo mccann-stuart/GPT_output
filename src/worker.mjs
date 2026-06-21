@@ -292,6 +292,122 @@ async function readJsonPayload(request) {
   }
 }
 
+function parseBoECsv(csvText) {
+  const lines = csvText.split('\n').map(line => line.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+
+  const headers = lines[0].split(',');
+  const bankRateIdx = headers.indexOf('IUDBEDR');
+  const soniaIdx = headers.indexOf('IUDSOIA');
+  const dateIdx = headers.indexOf('DATE');
+
+  if (bankRateIdx === -1 || soniaIdx === -1 || dateIdx === -1) {
+    return null;
+  }
+
+  let latestBankRate = null;
+  let latestSonia = null;
+  let latestDate = null;
+
+  for (let i = lines.length - 1; i >= 1; i--) {
+    const cols = lines[i].split(',');
+    const dateVal = cols[dateIdx];
+    const bankRateVal = parseFloat(cols[bankRateIdx]);
+    const soniaVal = parseFloat(cols[soniaIdx]);
+
+    if (latestBankRate === null && !isNaN(bankRateVal)) {
+      latestBankRate = bankRateVal;
+      latestDate = dateVal;
+    }
+    if (latestSonia === null && !isNaN(soniaVal)) {
+      latestSonia = soniaVal;
+    }
+
+    if (latestBankRate !== null && latestSonia !== null) {
+      break;
+    }
+  }
+
+  return {
+    bankRate: latestBankRate,
+    sonia: latestSonia,
+    date: latestDate
+  };
+}
+
+async function handleLiveIndicators(request, env) {
+  if (request.method !== 'GET') {
+    return errorResponse(405, 'Method not allowed');
+  }
+
+  const fallback = {
+    bankRate: 3.75,
+    sonia: 3.7303,
+    swap2y: 4.02,
+    swap5y: 4.05,
+    gilt2y: 4.02,
+    gilt5y: 4.05,
+    lastUpdated: '17 Jun 2026',
+    source: 'fallback'
+  };
+
+  try {
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const format = (d) => `${String(d.getDate()).padStart(2, '0')}/${months[d.getMonth()]}/${d.getFullYear()}`;
+    const dateFrom = format(thirtyDaysAgo);
+    const dateTo = format(today);
+
+    const boeUrl = `https://www.bankofengland.co.uk/boeapps/iadb/fromshowcolumns.asp?csv.x=yes&Datefrom=${dateFrom}&Dateto=${dateTo}&SeriesCodes=IUDBEDR,IUDSOIA&CSVF=TN&UsingCodes=Y`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch(boeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      throw new Error(`BoE request failed with status: ${res.status}`);
+    }
+
+    const csvText = await res.text();
+    const parsed = parseBoECsv(csvText);
+
+    if (!parsed || parsed.bankRate === null || parsed.sonia === null) {
+      throw new Error('Failed to parse required rates from BoE response');
+    }
+
+    const bankRate = parsed.bankRate;
+    const sonia = parsed.sonia;
+    const swap2y = parseFloat((sonia + 0.29).toFixed(4));
+    const swap5y = parseFloat((sonia + 0.32).toFixed(4));
+
+    return json({
+      bankRate,
+      sonia,
+      swap2y,
+      swap5y,
+      gilt2y: swap2y,
+      gilt5y: swap5y,
+      lastUpdated: parsed.date,
+      source: 'live'
+    });
+
+  } catch (err) {
+    console.warn('Failed to fetch live indicators from Bank of England, returning fallback:', err.message);
+    return json(fallback);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -308,6 +424,10 @@ export default {
 
       if (url.pathname === '/api/upload-manifest') {
         return await handleUploadManifest(request, env);
+      }
+
+      if (url.pathname === '/api/live-indicators') {
+        return await handleLiveIndicators(request, env);
       }
     } catch (error) {
       if (error instanceof ApiRequestError) {
