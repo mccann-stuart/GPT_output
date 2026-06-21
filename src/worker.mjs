@@ -8,6 +8,18 @@ const SAFE_DELIVERABLE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(jsx|mjs)$/;
 const LOCAL_IMPORT_PATTERN = /\b(?:import\s+[^'"]*?from|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
 const R2_UPLOAD_PREFIX = 'jsxupload/Files/';
 const R2_ROUTE_PREFIX = '/jsxupload/Files/';
+const BOE_IADB_CSV_ENDPOINT = 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp';
+const BOE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const LIVE_INDICATOR_FALLBACK = {
+  bankRate: 3.75,
+  sonia: 3.7303,
+  swap2y: 4.02,
+  swap5y: 4.05,
+  gilt2y: 4.02,
+  gilt5y: 4.05,
+  lastUpdated: '17 Jun 2026',
+  source: 'fallback'
+};
 
 class ApiRequestError extends Error {
   constructor(status, message) {
@@ -293,6 +305,26 @@ async function readJsonPayload(request) {
   }
 }
 
+function formatBoeDate(date) {
+  return `${String(date.getDate()).padStart(2, '0')}/${BOE_MONTHS[date.getMonth()]}/${date.getFullYear()}`;
+}
+
+function buildBoeCsvUrl(today = new Date()) {
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(today.getDate() - 30);
+
+  const params = new URLSearchParams({
+    'csv.x': 'yes',
+    Datefrom: formatBoeDate(thirtyDaysAgo),
+    Dateto: formatBoeDate(today),
+    SeriesCodes: 'IUDBEDR,IUDSOIA',
+    CSVF: 'TN',
+    UsingCodes: 'Y',
+  });
+
+  return `${BOE_IADB_CSV_ENDPOINT}?${params.toString()}`;
+}
+
 function parseBoECsv(csvText) {
   const lines = csvText.split('\n').map(line => line.trim()).filter(Boolean);
   if (lines.length < 2) return null;
@@ -306,34 +338,22 @@ function parseBoECsv(csvText) {
     return null;
   }
 
-  let latestBankRate = null;
-  let latestSonia = null;
-  let latestDate = null;
-
   for (let i = lines.length - 1; i >= 1; i--) {
     const cols = lines[i].split(',');
     const dateVal = cols[dateIdx];
     const bankRateVal = parseFloat(cols[bankRateIdx]);
     const soniaVal = parseFloat(cols[soniaIdx]);
 
-    if (latestBankRate === null && !isNaN(bankRateVal)) {
-      latestBankRate = bankRateVal;
-      latestDate = dateVal;
-    }
-    if (latestSonia === null && !isNaN(soniaVal)) {
-      latestSonia = soniaVal;
-    }
-
-    if (latestBankRate !== null && latestSonia !== null) {
-      break;
+    if (!isNaN(bankRateVal) && !isNaN(soniaVal)) {
+      return {
+        bankRate: bankRateVal,
+        sonia: soniaVal,
+        date: dateVal
+      };
     }
   }
 
-  return {
-    bankRate: latestBankRate,
-    sonia: latestSonia,
-    date: latestDate
-  };
+  return null;
 }
 
 async function handleLiveIndicators(request, env) {
@@ -341,40 +361,15 @@ async function handleLiveIndicators(request, env) {
     return errorResponse(405, 'Method not allowed');
   }
 
-  const fallback = {
-    bankRate: 3.75,
-    sonia: 3.7303,
-    swap2y: 4.02,
-    swap5y: 4.05,
-    gilt2y: 4.02,
-    gilt5y: 4.05,
-    lastUpdated: '17 Jun 2026',
-    source: 'fallback'
-  };
-
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const today = new Date();
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(today.getDate() - 30);
-
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const format = (d) => `${String(d.getDate()).padStart(2, '0')}/${months[d.getMonth()]}/${d.getFullYear()}`;
-    const dateFrom = format(thirtyDaysAgo);
-    const dateTo = format(today);
-
-    const boeUrl = `https://www.bankofengland.co.uk/boeapps/iadb/fromshowcolumns.asp?csv.x=yes&Datefrom=${dateFrom}&Dateto=${dateTo}&SeriesCodes=IUDBEDR,IUDSOIA&CSVF=TN&UsingCodes=Y`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
-
-    const res = await fetch(boeUrl, {
+    const res = await fetch(buildBoeCsvUrl(), {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        Accept: 'text/csv,application/csv,text/plain;q=0.9,*/*;q=0.5'
       },
       signal: controller.signal
     });
-
-    clearTimeout(timeoutId);
 
     if (!res.ok) {
       throw new Error(`BoE request failed with status: ${res.status}`);
@@ -405,7 +400,9 @@ async function handleLiveIndicators(request, env) {
 
   } catch (err) {
     console.warn('Failed to fetch live indicators from Bank of England, returning fallback:', err.message);
-    return json(fallback);
+    return json(LIVE_INDICATOR_FALLBACK);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

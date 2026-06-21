@@ -409,7 +409,9 @@ test('worker returns 404 for missing R2 uploaded files', async () => {
 });
 
 test('worker returns live indicators data for GET /api/live-indicators when fetch succeeds', async () => {
-  globalThis.fetch = async (url) => {
+  let capturedRequest;
+  globalThis.fetch = async (url, init) => {
+    capturedRequest = { url: String(url), init };
     if (url.includes('bankofengland.co.uk')) {
       return new Response(
         `DATE,IUDBEDR,IUDSOIA\n15 Jun 2026,3.75,3.7296\n16 Jun 2026,3.75,3.7304\n17 Jun 2026,3.75,3.7303\n`,
@@ -428,6 +430,32 @@ test('worker returns live indicators data for GET /api/live-indicators when fetc
   assert.equal(body.sonia, 3.7303);
   assert.equal(body.swap2y, 4.0203); // sonia + 0.29
   assert.equal(body.swap5y, 4.0503); // sonia + 0.32
+  assert.equal(body.lastUpdated, '17 Jun 2026');
+  assert.equal(body.source, 'live');
+  assert.match(capturedRequest.url, /boeapps\/database\/_iadb-FromShowColumns\.asp/);
+  assert.match(capturedRequest.url, /SeriesCodes=IUDBEDR%2CIUDSOIA/);
+  assert.equal(capturedRequest.init.headers['User-Agent'], undefined);
+  assert.match(capturedRequest.init.headers.Accept, /text\/csv/);
+});
+
+test('worker uses the latest complete live indicators row when the newest row is partial', async () => {
+  globalThis.fetch = async (url) => {
+    if (url.includes('bankofengland.co.uk')) {
+      return new Response(
+        `DATE,IUDBEDR,IUDSOIA\n16 Jun 2026,3.75,3.7304\n17 Jun 2026,3.75,3.7303\n18 Jun 2026,3.75,\n`,
+        { status: 200 }
+      );
+    }
+    throw new Error(`Unexpected fetch in test: ${url}`);
+  };
+
+  const request = new Request('https://example.com/api/live-indicators');
+  const response = await worker.fetch(request, makeEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.bankRate, 3.75);
+  assert.equal(body.sonia, 3.7303);
   assert.equal(body.lastUpdated, '17 Jun 2026');
   assert.equal(body.source, 'live');
 });
