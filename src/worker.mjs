@@ -365,10 +365,13 @@ async function handleLiveIndicators(request, env) {
     return errorResponse(405, 'Method not allowed');
   }
 
+  const debug = new URL(request.url).searchParams.get('debug') === '1';
+  const diag = { boeUrl: buildBoeCsvUrl() };
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(buildBoeCsvUrl(), {
+    const res = await fetch(diag.boeUrl, {
       headers: {
         'User-Agent': BOE_USER_AGENT,
         Accept: 'text/csv,application/csv,text/plain;q=0.9,*/*;q=0.5'
@@ -376,11 +379,17 @@ async function handleLiveIndicators(request, env) {
       signal: controller.signal
     });
 
+    diag.status = res.status;
+    diag.contentType = res.headers.get('content-type');
+
+    const csvText = await res.text();
+    diag.bodyLength = csvText.length;
+    diag.bodyHead = csvText.slice(0, 600);
+
     if (!res.ok) {
       throw new Error(`BoE request failed with status: ${res.status}`);
     }
 
-    const csvText = await res.text();
     const parsed = parseBoECsv(csvText);
 
     if (!parsed || parsed.bankRate === null || parsed.sonia === null) {
@@ -400,11 +409,17 @@ async function handleLiveIndicators(request, env) {
       gilt2y: swap2y,
       gilt5y: swap5y,
       lastUpdated: parsed.date,
-      source: 'live'
+      source: 'live',
+      ...(debug ? { diag } : {})
     });
 
   } catch (err) {
     console.warn('Failed to fetch live indicators from Bank of England, returning fallback:', err.message);
+    if (debug) {
+      diag.error = err && err.message ? err.message : String(err);
+      diag.errorName = err && err.name ? err.name : undefined;
+      return json({ ...LIVE_INDICATOR_FALLBACK, diag });
+    }
     return json(LIVE_INDICATOR_FALLBACK);
   } finally {
     clearTimeout(timeoutId);
