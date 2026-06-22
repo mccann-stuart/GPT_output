@@ -491,3 +491,32 @@ test('worker returns 405 for non-GET live-indicators requests', async () => {
   assert.equal(response.status, 405);
   assert.match(body.error, /method not allowed/i);
 });
+
+test('worker overwrites existing R2 files on upload without error', async () => {
+  const env = makeUploadEnv();
+
+  // Pre-populate R2 with a file under the prefix
+  await env.JSX_UPLOADS.put('jsxupload/Files/example.jsx', 'initial content');
+
+  const request = makeUploadRequest([
+    {
+      name: 'example.jsx',
+      text: 'import { value } from "./example-logic.mjs";\nexport default function Example() { return value; }\n',
+    },
+    {
+      name: 'example-logic.mjs',
+      text: 'export const value = "ok";\n',
+    },
+  ]);
+
+  const response = await worker.fetch(request, env, {});
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.jsxFile, 'example.jsx');
+
+  // Verify that the file in the mock R2 was overwritten with the new content
+  const overwrittenObject = await env.JSX_UPLOADS.get('jsxupload/Files/example.jsx');
+  assert.equal(overwrittenObject.body, 'import { value } from "./example-logic.mjs";\nexport default function Example() { return value; }\n');
+});
+
