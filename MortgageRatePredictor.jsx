@@ -944,7 +944,7 @@ function Stat({ label, value, sub, emphasis, color }) {
 }
 function IndicatorBoard({ indicators, liveData }) {
   return (
-    <section style={{ marginBottom: 34 }}>
+    <section style={{ borderTop: `2px solid ${PALETTE.ink}`, paddingTop: 28, marginBottom: 34 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 10 }}>
         <h2 className="fr" style={{ fontSize: 20, fontWeight: 500, margin: 0 }}>Data links to indicators</h2>
         <span className="mono" style={{ fontSize: 11, color: PALETTE.slate }}>official first · market feeds where needed</span>
