@@ -10,6 +10,8 @@ import React, { useState, useMemo, useEffect } from "react";
 //   • BoE Bank Rate held at 3.75% (18 Jun 2026)
 //   • BoE OIS spot curve: 2yr ≈ 4.02%, 5yr ≈ 4.05% (18 Jun 2026)
 //   • Avg 2yr fix ≈ 5.61%, 5yr fix ≈ 5.58% (Moneyfacts, mid-June)
+//   • Low-LTV best-buy products can price materially inside the average;
+//     the default basis applies that borrower-segment discount explicitly.
 // Spread components are illustrative lender build-ups; adjust the sliders to model.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,27 @@ const TERMS = [
   { key: "3m", label: "3 months", sub: "near-term" },
   { key: "12m", label: "12 months", sub: "one-year view" },
   { key: "5y", label: "5 years", sub: "structural" },
+];
+
+const PRICING_BASES = [
+  {
+    key: "lowLtvBestBuy",
+    label: "Low-LTV best-buy",
+    sub: "sub-60% LTV best-buy",
+    description: "Applies a 104 bps discount to the average stack for low-LTV remortgage products: lower capital drag, leaner target margin and sharper competition.",
+    adjustments: {
+      credit: { base2y: -0.32, base5y: -0.32 },
+      margin: { base2y: -0.17, base5y: -0.17 },
+      comp: { base2y: -0.55, base5y: -0.55 },
+    },
+  },
+  {
+    key: "average",
+    label: "Market average",
+    sub: "whole-market average",
+    description: "Keeps the mid-June market-average calibration, including higher-LTV and less competitive products.",
+    adjustments: {},
+  },
 ];
 
 const SOURCE_URLS = {
@@ -319,6 +342,28 @@ function fmtBps(v) {
   return `${sign}${Math.abs(v)} bps`;
 }
 
+function roundedRate(value) {
+  return Number(value.toFixed(4));
+}
+
+function basisAdjustmentValue(adjustment, key) {
+  if (typeof adjustment === "number") return adjustment;
+  return adjustment[key] || 0;
+}
+
+function applyPricingBasis(levers, basis) {
+  return levers.map((lever) => {
+    const adjustment = basis.adjustments[lever.id];
+    if (!adjustment) return lever;
+
+    return {
+      ...lever,
+      base2y: roundedRate(lever.base2y + basisAdjustmentValue(adjustment, "base2y")),
+      base5y: roundedRate(lever.base5y + basisAdjustmentValue(adjustment, "base5y")),
+    };
+  });
+}
+
 // ── APRC Mathematical Helpers ──────────────────────────────────────────────────
 function getMonthlyPayment(principal, annualRatePct, termYears) {
   if (annualRatePct <= 0) return principal / (termYears * 12);
@@ -361,6 +406,7 @@ function solveAPRC(L, F, T, N, P1, P2) {
 
 export default function MortgageRatePredictor() {
   const [term, setTerm] = useState("5y"); // which fix length to model
+  const [pricingBasis, setPricingBasis] = useState("lowLtvBestBuy");
   const [horizon, setHorizon] = useState("12m"); // which prediction horizon
   const [openLever, setOpenLever] = useState(null);
   const [aprcOpen, setAprcOpen] = useState(false); // Headline vs. APRC section starts collapsed
@@ -369,7 +415,7 @@ export default function MortgageRatePredictor() {
   const [calcLoan, setCalcLoan] = useState(250000);
   const [calcFee, setCalcFee] = useState(999);
   const [calcFeeAdded, setCalcFeeAdded] = useState(false);
-  const [calcSvr, setCalcSvr] = useState(7.50);
+  const [calcSvr, setCalcSvr] = useState(6.24);
   const [calcTermYears, setCalcTermYears] = useState(25);
   const [customHeadlineRate, setCustomHeadlineRate] = useState(null);
 
@@ -396,10 +442,11 @@ export default function MortgageRatePredictor() {
       });
   }, []);
 
-  // Dynamically update the levers baseline values using the live data
+  const selectedBasis = PRICING_BASES.find((basis) => basis.key === pricingBasis) || PRICING_BASES[0];
+
+  // Dynamically update the swap baseline using live data, then apply the selected market segment.
   const dynamicLevers = useMemo(() => {
-    if (!liveData) return LEVERS;
-    return LEVERS.map((l) => {
+    const liveLevers = !liveData ? LEVERS : LEVERS.map((l) => {
       if (l.id === "swap") {
         return {
           ...l,
@@ -409,7 +456,8 @@ export default function MortgageRatePredictor() {
       }
       return l;
     });
-  }, [liveData]);
+    return applyPricingBasis(liveLevers, selectedBasis);
+  }, [liveData, selectedBasis]);
 
   const isFiveYear = term === "5y";
   const selectedHorizon = TERMS.find((t) => t.key === horizon);
@@ -427,8 +475,8 @@ export default function MortgageRatePredictor() {
 
   const netMove = (predicted - current) * 100;
 
-  // Active headline rate in the calculator defaults to the model's predicted rate
-  const activeHeadlineRate = customHeadlineRate !== null ? customHeadlineRate : predicted;
+  // The APRC solver compares deals available today; forecast moves stay in the headline scenario panel.
+  const activeHeadlineRate = customHeadlineRate !== null ? customHeadlineRate : current;
   const initialPeriodMonths = term === "5y" ? 60 : 24;
   const minTermYears = term === "5y" ? 5 : 2;
   const activeTermYears = Math.max(calcTermYears, minTermYears);
@@ -529,16 +577,24 @@ export default function MortgageRatePredictor() {
               <Seg key={o.k} active={term === o.k} onClick={() => setTerm(o.k)}>{o.t}</Seg>
             ))}
           </ControlGroup>
+          <ControlGroup label="Pricing basis">
+            {PRICING_BASES.map((basis) => (
+              <Seg key={basis.key} active={pricingBasis === basis.key} onClick={() => setPricingBasis(basis.key)}>{basis.label}</Seg>
+            ))}
+          </ControlGroup>
           <ControlGroup label="Prediction horizon">
             {TERMS.map((o) => (
               <Seg key={o.key} active={horizon === o.key} onClick={() => setHorizon(o.key)}>{o.label}</Seg>
             ))}
           </ControlGroup>
         </div>
+        <p style={{ fontSize: 13, lineHeight: 1.5, color: PALETTE.slate, margin: "-18px 0 28px", maxWidth: 760 }}>
+          {selectedBasis.description}
+        </p>
 
         {/* Headline prediction */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 1, background: PALETTE.line, border: `1px solid ${PALETTE.line}`, marginBottom: 36 }}>
-          <Stat label="Modelled rate today" value={fmtPct(current)} sub={`${isFiveYear ? "5" : "2"}-year fix, build-up sum`} />
+          <Stat label="Modelled rate today" value={fmtPct(current)} sub={`${isFiveYear ? "5" : "2"}-year fix · ${selectedBasis.sub}`} />
           <Stat label={`Predicted · ${selectedHorizon.label}`} value={fmtPct(predicted)} sub="sum of lever trends" emphasis />
           <Stat
             label="Net move"
@@ -681,20 +737,20 @@ export default function MortgageRatePredictor() {
                 </div>
               </div>
               <p style={{ fontSize: 13.5, lineHeight: 1.5, color: PALETTE.slate, margin: 0 }}>
-                <strong>Why is <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> typically much higher?</strong> In the UK, <abbr title="Standard Variable Rate: The default, variable rate your mortgage reverts to after your fixed deal ends. It is set by the lender and is usually highly elevated.">SVRs</abbr> are highly elevated (currently around 7.50%). Because the <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> assumes you hold the mortgage for the full term without ever remortgaging, the higher <abbr title="Standard Variable Rate: The default, variable rate your mortgage reverts to after your fixed deal ends. It is set by the lender and is usually highly elevated.">SVR</abbr> dominates the calculation for the remaining 20+ years.
+                <strong>Why is <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> typically higher?</strong> Because the <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> assumes you keep the mortgage for the full term without remortgaging. After the initial deal, the solver switches the remaining balance to a {calcSvr.toFixed(2)}% revert rate, so the later years can dominate the whole-term cost.
               </p>
 
               <div style={{ background: "rgba(176, 138, 79, 0.1)", borderLeft: `3px solid ${PALETTE.brass}`, padding: "12px 14px", borderRadius: 2 }}>
                 <div className="mono" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: PALETTE.brass, marginBottom: 4 }}>
-                  Solving the 4.3% <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> Puzzle
+                  Why {activeHeadlineRate.toFixed(2)}% can become {aprcResults.aprc.toFixed(2)}% <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr>
                 </div>
                 <p style={{ fontSize: 12.5, lineHeight: 1.45, color: PALETTE.ink, margin: 0 }}>
-                  If the market offers a product with an <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr> of <strong>4.30%</strong>, how does that add up?
+                  The headline rate only sets the first {initialPeriodMonths / 12} years. The APRC is the internal rate that makes every modelled payment and fee add back to the amount borrowed.
                 </p>
                 <ul style={{ fontSize: 12.5, lineHeight: 1.45, color: PALETTE.ink, paddingLeft: 18, marginTop: 6, marginBottom: 0 }}>
-                  <li><strong>Long Fixed Terms:</strong> Fixing for 10 years or the lifetime of the mortgage means you spend little or no time on the high <abbr title="Standard Variable Rate: The default, variable rate your mortgage reverts to after your fixed deal ends. It is set by the lender and is usually highly elevated.">SVR</abbr>.</li>
-                  <li><strong>Lower Headline Rates:</strong> An initial rate of ~3.80% offset by low fee levels and <abbr title="Standard Variable Rate: The default, variable rate your mortgage reverts to after your fixed deal ends. It is set by the lender and is usually highly elevated.">SVR</abbr> components averages out to a 4.30% <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its full term, factoring in the headline rate, fees, and the SVR revert rate.">APRC</abbr>.</li>
-                  <li><strong>Fee Minimization:</strong> Upfront fees disproportionately raise <abbr title="Annual Percentage Rate of Charge: The average cost of the mortgage per year over its term, factoring in the headline rate, fees, and the SVR revert rate.">APRCs</abbr> on smaller loan sizes.</li>
+                  <li><strong>Initial period:</strong> {fmtCurrency(aprcResults.p1)} per month during the fixed-rate window.</li>
+                  <li><strong>Revert period:</strong> {fmtCurrency(aprcResults.p2)} per month after the fixed deal ends if the loan falls onto the revert rate.</li>
+                  <li><strong>Fees:</strong> The {fmtCurrency(calcFee)} product fee is included in the rate calculation, either upfront or added to the balance.</li>
                 </ul>
               </div>
             </div>
@@ -742,7 +798,7 @@ export default function MortgageRatePredictor() {
                       onClick={() => setCustomHeadlineRate(null)}
                       style={{ border: "none", background: "none", color: PALETTE.sage, fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline" }}
                     >
-                      Reset to model rate ({predicted.toFixed(2)}%)
+                      Reset to current model rate ({current.toFixed(2)}%)
                     </button>
                   )}
                 </div>
@@ -770,7 +826,7 @@ export default function MortgageRatePredictor() {
                       style={{ cursor: "pointer" }}
                     />
                     <label htmlFor="feeAdded" style={{ fontSize: 11.5, color: PALETTE.slate, cursor: "pointer", userSelect: "none" }}>
-                      Add fee to the loan balance (capitalize fee)
+                      Add fee to the loan balance (capitalise fee)
                     </label>
                   </div>
                 </div>
@@ -852,8 +908,8 @@ export default function MortgageRatePredictor() {
 
         <p style={{ fontSize: 12, color: PALETTE.slate, lineHeight: 1.5, marginTop: 18 }}>
           Illustrative model for scenario thinking — not advice or a rate guarantee. A fall in the swap does not pass through one-for-one:
-          spreads widen or compress independently. Component values are calibrated build-ups, not published lender figures.
-          The links point to live or regularly updated sources. Daily rates are fetched in real-time from the Bank of England Statistical Interactive Database (IADB).
+          spreads widen or compress independently. Component values are calibrated build-ups for the selected pricing basis, not published lender figures.
+          The links point to live or regularly updated sources. Daily Bank Rate and SONIA are fetched from the Bank of England Statistical Interactive Database (IADB); fixed-term swap anchors are proxied where a live market feed is unavailable.
           Verify current numbers before relying on them. Your home may be repossessed if you do not keep up mortgage repayments.
         </p>
       </div>
