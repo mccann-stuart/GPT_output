@@ -178,6 +178,48 @@ function buildPresets() {
 }
 const PRESETS = buildPresets();
 
+// ── Shareable settings contract ───────────────────────────────────────────────
+// The viewer copies a URL that encodes only the settings that differ from these
+// defaults. Shareable state = the burn scenario in focus, every driver edit and
+// the global starting position. Transient UI (which foldaways are open) is kept
+// in local state and is deliberately never written to the URL.
+export const DEFAULT_SETTINGS = {
+  active: "medium",
+  globals: { ...GLOBAL_PRESET },
+  scenarios: buildPresets(),
+};
+
+const SCENARIO_KEYS = SCENARIOS.map((s) => s.key);
+
+// Restored settings come from an untrusted base64url URL value: clamp every
+// number into its slider range, drop unknown keys, and fall back to presets so a
+// hand-crafted or stale link can never break rendering.
+function clampNumber(value, min, max, fallback) {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function normaliseSettings(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const active = SCENARIO_KEYS.includes(r.active) ? r.active : DEFAULT_SETTINGS.active;
+
+  const rg = r.globals && typeof r.globals === "object" ? r.globals : {};
+  const globals = {};
+  GLOBALS.forEach((g) => { globals[g.key] = clampNumber(rg[g.key], g.min, g.max, GLOBAL_PRESET[g.key]); });
+
+  const rs = r.scenarios && typeof r.scenarios === "object" ? r.scenarios : {};
+  const scenarios = {};
+  SCENARIOS.forEach((s) => {
+    const src = rs[s.key] && typeof rs[s.key] === "object" ? rs[s.key] : {};
+    const d = {};
+    DRIVERS.forEach((dr) => { d[dr.key] = clampNumber(src[dr.key], dr.min, dr.max, PRESETS[s.key][dr.key]); });
+    scenarios[s.key] = d;
+  });
+
+  return { active, globals, scenarios };
+}
+
 const YEARS = 10;
 const MILESTONES = [3, 5, 10];
 
@@ -373,16 +415,22 @@ function LineChart({ title, series, yFormat, showZero, xTicks }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function SierraScenarioModel() {
-  const [active, setActive] = useState("medium");
-  const [scenarios, setScenarios] = useState(() => {
-    const o = {};
-    for (const k in PRESETS) o[k] = { ...PRESETS[k] };
-    return o;
-  });
-  const [globals, setGlobals] = useState({ ...GLOBAL_PRESET });
+export default function SierraScenarioModel({ initialSettings = DEFAULT_SETTINGS, onSettingsChange } = {}) {
+  const restored = useMemo(() => normaliseSettings(initialSettings), [initialSettings]);
+  const [active, setActive] = useState(restored.active);
+  const [scenarios, setScenarios] = useState(restored.scenarios);
+  const [globals, setGlobals] = useState(restored.globals);
+  // Transient UI — intentionally local, never shared in the copied URL.
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showTable, setShowTable] = useState(false);
+
+  // Tell the viewer the full shareable state after any change; it diffs against
+  // DEFAULT_SETTINGS and encodes only what differs.
+  const share = (next) => onSettingsChange?.({
+    active: next.active ?? active,
+    scenarios: next.scenarios ?? scenarios,
+    globals: next.globals ?? globals,
+  });
 
   const results = useMemo(() => {
     const o = {};
@@ -394,16 +442,32 @@ export default function SierraScenarioModel() {
   const r = results[active];
   const d = scenarios[active];
 
-  const setDriver = (key, val) => setScenarios((prev) => ({ ...prev, [active]: { ...prev[active], [key]: val } }));
-  const setGlobal = (key, val) => setGlobals((prev) => ({ ...prev, [key]: val }));
+  const selectScenario = (key) => { setActive(key); share({ active: key }); };
+  const setDriver = (key, val) => {
+    const nextScenarios = { ...scenarios, [active]: { ...scenarios[active], [key]: val } };
+    setScenarios(nextScenarios);
+    share({ scenarios: nextScenarios });
+  };
+  const setGlobal = (key, val) => {
+    const nextGlobals = { ...globals, [key]: val };
+    setGlobals(nextGlobals);
+    share({ globals: nextGlobals });
+  };
 
   const scenarioModified = DRIVERS.some((dr) => Math.abs(d[dr.key] - PRESETS[active][dr.key]) > 1e-9);
   const globalsModified = GLOBALS.some((gl) => Math.abs(globals[gl.key] - GLOBAL_PRESET[gl.key]) > 1e-9);
 
-  const resetScenario = () => setScenarios((prev) => ({ ...prev, [active]: { ...PRESETS[active] } }));
+  const resetScenario = () => {
+    const nextScenarios = { ...scenarios, [active]: { ...PRESETS[active] } };
+    setScenarios(nextScenarios);
+    share({ scenarios: nextScenarios });
+  };
   const resetAll = () => {
-    const o = {}; for (const k in PRESETS) o[k] = { ...PRESETS[k] };
-    setScenarios(o); setGlobals({ ...GLOBAL_PRESET });
+    const nextScenarios = buildPresets();
+    const nextGlobals = { ...GLOBAL_PRESET };
+    setScenarios(nextScenarios);
+    setGlobals(nextGlobals);
+    share({ scenarios: nextScenarios, globals: nextGlobals });
   };
 
   // Chart series builders — all scenarios overlaid, active emphasised.
@@ -480,7 +544,7 @@ export default function SierraScenarioModel() {
               const res = results[s.key];
               return (
                 <button
-                  key={s.key} type="button" className="scn" onClick={() => setActive(s.key)}
+                  key={s.key} type="button" className="scn" onClick={() => selectScenario(s.key)}
                   aria-pressed={sel}
                   style={{
                     padding: "14px 16px",
