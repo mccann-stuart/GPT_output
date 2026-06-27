@@ -13,7 +13,7 @@
     "bench:clone": "node benchmark_clone.mjs"
   },
   "devDependencies": {
-    "@babel/standalone": "^7.29.4",
+    "@babel/standalone": "^7.29.7",
     "chart.js": "^4.5.1",
     "d3": "^7.9.0",
     "esbuild": "^0.25.12",
