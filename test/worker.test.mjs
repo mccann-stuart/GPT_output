@@ -334,6 +334,30 @@ test('worker rejects uploaded JSX that imports a missing MJS file', async () => 
   assert.match(body.error, /missing file/i);
 });
 
+test('worker rejects uploaded JSX that side-effect imports a missing MJS file without space', async () => {
+  const request = makeUploadRequest([
+    { name: 'missing-side-effect-nospace.jsx', text: 'import"./missing-logic.mjs";\nexport default function Missing() { return null; }' },
+  ]);
+
+  const response = await worker.fetch(request, makeUploadEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /missing file/i);
+});
+
+test('worker rejects uploaded JSX that side-effect imports a missing MJS file', async () => {
+  const request = makeUploadRequest([
+    { name: 'missing-side-effect.jsx', text: 'import "./missing-logic.mjs";\nexport default function Missing() { return null; }' },
+  ]);
+
+  const response = await worker.fetch(request, makeUploadEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /missing file/i);
+});
+
 test('worker rejects oversized uploaded files', async () => {
   const request = makeUploadRequest([
     { name: 'large.jsx', text: `export default ${JSON.stringify('x'.repeat(512 * 1024))};` },
