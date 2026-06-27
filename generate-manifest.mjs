@@ -13,5 +13,3 @@ const jsxFiles = listRootJsxFiles(root);
 
 const out = join(root, 'jsx-manifest.json');
 writeFileSync(out, toManifestJson(jsxFiles));
-
-console.log(`jsx-manifest.json → ${jsxFiles.length} file(s): ${jsxFiles.join(', ')}`);
