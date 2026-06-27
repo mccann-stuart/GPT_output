@@ -128,7 +128,7 @@ async function readUploadFiles(request) {
   }
 
   const seen = new Set();
-  const uploads = [];
+  const uploadPromises = [];
   let totalBytes = 0;
   for (const file of files) {
     const name = file.name || '';
@@ -146,8 +146,9 @@ async function readUploadFiles(request) {
     if (totalBytes > MAX_UPLOAD_BODY_BYTES) {
       throw new ApiRequestError(413, `Upload body must be ${MAX_UPLOAD_BODY_BYTES} bytes or less`);
     }
-    uploads.push({ name, text: await file.text() });
+    uploadPromises.push(file.text().then(text => ({ name, text })));
   }
+  const uploads = await Promise.all(uploadPromises);
 
   const jsxFiles = uploads.filter((file) => file.name.endsWith('.jsx'));
   if (jsxFiles.length !== 1) {
