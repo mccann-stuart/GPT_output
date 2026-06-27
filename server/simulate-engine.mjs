@@ -463,12 +463,28 @@ export function runSimulation(rawParams, { random = Math.random } = {}) {
   const numInts = Math.ceil(shiftLength / intLen);
   const intervals = [];
 
+  let resultIdx = 0;
+  let abandonIdx = 0;
+
   for (let i = 0; i < numInts; i++) {
     const is = shiftStart + i * intLen;
     const ie = is + intLen;
 
-    const arriving = results.filter((result) => result.arrival >= is && result.arrival < ie);
-    const abandonedInInt = abandonedCalls.filter((call) => call.arrival >= is && call.arrival < ie);
+    const arriving = [];
+    while (resultIdx < results.length && results[resultIdx].arrival < ie) {
+      if (results[resultIdx].arrival >= is) {
+        arriving.push(results[resultIdx]);
+      }
+      resultIdx++;
+    }
+
+    const abandonedInInt = [];
+    while (abandonIdx < abandonedCalls.length && abandonedCalls[abandonIdx].arrival < ie) {
+      if (abandonedCalls[abandonIdx].arrival >= is) {
+        abandonedInInt.push(abandonedCalls[abandonIdx]);
+      }
+      abandonIdx++;
+    }
     const totalOffered = arriving.length + abandonedInInt.length;
     const numAbandoned = abandonedInInt.length;
     const abandonRate = totalOffered > 0 ? (numAbandoned / totalOffered) * 100 : 0;
