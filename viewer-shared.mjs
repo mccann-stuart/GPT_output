@@ -293,17 +293,17 @@ function registerGlobalErrorHandlers() {
 
 const SHARE_PARAM = "state";
 const MAX_SHARED_STATE_LENGTH = 12000;
-function isSafeObjectKey(key) {
+export function isSafeObjectKey(key) {
   return key !== "__proto__" && key !== "prototype" && key !== "constructor";
 }
 
-function isAllowedManifestFile(value) {
+export function isAllowedManifestFile(value) {
   return (
     typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*\.jsx$/.test(value)
   );
 }
 
-function truncateMiddle(text, maxLength) {
+export function truncateMiddle(text, maxLength) {
   if (text.length <= maxLength) return text;
   if (maxLength <= 3) return text.slice(0, maxLength);
   const keepLength = maxLength - 3;
@@ -312,11 +312,11 @@ function truncateMiddle(text, maxLength) {
   return `${text.slice(0, prefixLength)}...${text.slice(text.length - suffixLength)}`;
 }
 
-function isPlainObject(value) {
+export function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function deepClone(value) {
+export function deepClone(value) {
   if (Array.isArray(value)) {
     return value.map(deepClone);
   }
@@ -331,7 +331,7 @@ function deepClone(value) {
   return value;
 }
 
-function deepEqual(a, b) {
+export function deepEqual(a, b) {
   if (Object.is(a, b)) return true;
   if (typeof a !== typeof b) return false;
   if (Array.isArray(a) && Array.isArray(b)) {
@@ -354,7 +354,7 @@ function deepEqual(a, b) {
   return false;
 }
 
-function applyOverrides(defaultValue, overrideValue) {
+export function applyOverrides(defaultValue, overrideValue) {
   if (overrideValue === undefined) {
     return deepClone(defaultValue);
   }
@@ -373,7 +373,7 @@ function applyOverrides(defaultValue, overrideValue) {
   return deepClone(overrideValue);
 }
 
-function diffFromDefaults(currentValue, defaultValue) {
+export function diffFromDefaults(currentValue, defaultValue) {
   if (deepEqual(currentValue, defaultValue)) return undefined;
   if (Array.isArray(currentValue) && Array.isArray(defaultValue)) {
     return deepClone(currentValue);
@@ -392,7 +392,7 @@ function diffFromDefaults(currentValue, defaultValue) {
   return deepClone(currentValue);
 }
 
-function encodeBase64Url(value) {
+export function encodeBase64Url(value) {
   const json = JSON.stringify(value);
   const bytes = new TextEncoder().encode(json);
   let binary = "";
@@ -405,7 +405,7 @@ function encodeBase64Url(value) {
     .replace(/=+$/g, "");
 }
 
-function decodeBase64Url(value) {
+export function decodeBase64Url(value) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padding =
     normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
@@ -415,7 +415,7 @@ function decodeBase64Url(value) {
   return JSON.parse(json);
 }
 
-function parseSharedState(encoded) {
+export function parseSharedState(encoded) {
   if (!encoded) return null;
   if (encoded.length > MAX_SHARED_STATE_LENGTH) return null;
   try {
@@ -429,7 +429,7 @@ function parseSharedState(encoded) {
   }
 }
 
-function isSafeUploadFileName(value) {
+export function isSafeUploadFileName(value) {
   return (
     typeof value === "string" &&
     /^[A-Za-z0-9][A-Za-z0-9._-]*\.(jsx|mjs)$/.test(value)
