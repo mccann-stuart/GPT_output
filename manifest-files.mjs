@@ -1,8 +1,11 @@
 import { readdir } from 'node:fs/promises';
 
 export function listRootJsxFiles(root) {
-  return readdir(root).then((files) =>
-    files.filter((f) => f.endsWith('.jsx') && !f.startsWith('.')).sort()
+  return readdir(root, { withFileTypes: true }).then((entries) =>
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.jsx') && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort()
   );
 }
 

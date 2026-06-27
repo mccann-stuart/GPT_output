@@ -9,11 +9,14 @@ import { dirname, join } from 'node:path';
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Helper to create and clean up fixtures
-function setupFixtures(testName, files) {
+function setupFixtures(testName, files, dirs = []) {
   const fixtureDir = join(rootDir, 'test', 'fixtures', testName);
   fs.mkdirSync(fixtureDir, { recursive: true });
   for (const file of files) {
     fs.writeFileSync(join(fixtureDir, file), '');
+  }
+  for (const dir of dirs) {
+    fs.mkdirSync(join(fixtureDir, dir), { recursive: true });
   }
   return fixtureDir;
 }
@@ -34,6 +37,19 @@ test('listRootJsxFiles returns only sorted .jsx files and ignores dotfiles', asy
   try {
     const result = await listRootJsxFiles(fixtureDir);
     assert.deepEqual(result, ['Widget.jsx', 'app.jsx']);
+  } finally {
+    teardownFixtures(fixtureDir);
+  }
+});
+
+test('listRootJsxFiles correctly ignores directories ending in .jsx', async () => {
+  const fixtureDir = setupFixtures('manifest_files_dir_check', [
+    'Widget.jsx'
+  ], ['fake.jsx']);
+
+  try {
+    const result = await listRootJsxFiles(fixtureDir);
+    assert.deepEqual(result, ['Widget.jsx']);
   } finally {
     teardownFixtures(fixtureDir);
   }
