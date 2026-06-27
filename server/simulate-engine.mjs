@@ -363,26 +363,7 @@ function nextAvail(at, busyUntil, brks) {
   return t;
 }
 
-export function runSimulation(rawParams, { random = Math.random } = {}) {
-  const params = normalizeSimulationParams(rawParams);
-  const {
-    numAgents,
-    shiftStart,
-    shiftLength,
-    breakDur,
-    numBreaks,
-    expectedCalls,
-    aht,
-    serviceTarget,
-    abandonTime,
-  } = params;
-
-  const shiftEnd = shiftStart + shiftLength;
-  const cdf = buildCDF(shiftLength);
-  const calls = generateCalls(expectedCalls, shiftStart, shiftLength, aht, cdf, abandonTime, random);
-  const allBrks = makeBreaks(numAgents, shiftStart, shiftLength, breakDur, numBreaks);
-  const busyUntil = new Array(numAgents).fill(shiftStart);
-
+function executeSimulationLoop(calls, allBrks, numAgents, shiftEnd, serviceTarget, busyUntil) {
   const events = [];
   const results = [];
   const abandonedCalls = [];
@@ -454,6 +435,10 @@ export function runSimulation(rawParams, { random = Math.random } = {}) {
   const order = { arrive: 0, brk_e: 1, answer: 2, brk_s: 3, end: 4, abandon: 5 };
   events.sort((a, b) => (a.t - b.t) || (order[a.type] - order[b.type]));
 
+  return { events, results, abandonedCalls };
+}
+
+function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents, shiftStart, shiftLength, shiftEnd) {
   const resultsByAgent = Array.from({ length: numAgents }, () => []);
   for (const result of results) {
     resultsByAgent[result.agent].push(result);
@@ -550,12 +535,7 @@ export function runSimulation(rawParams, { random = Math.random } = {}) {
   }
 
   return {
-    params,
-    events,
-    results,
     intervals,
-    allBrks,
-    abandonedCalls,
     overall: {
       asa,
       sl: slOv,
@@ -565,6 +545,56 @@ export function runSimulation(rawParams, { random = Math.random } = {}) {
       totalOffered,
       abandonRate: abandonRateOv,
     },
+  };
+}
+
+export function runSimulation(rawParams, { random = Math.random } = {}) {
+  const params = normalizeSimulationParams(rawParams);
+  const {
+    numAgents,
+    shiftStart,
+    shiftLength,
+    breakDur,
+    numBreaks,
+    expectedCalls,
+    aht,
+    serviceTarget,
+    abandonTime,
+  } = params;
+
+  const shiftEnd = shiftStart + shiftLength;
+  const cdf = buildCDF(shiftLength);
+  const calls = generateCalls(expectedCalls, shiftStart, shiftLength, aht, cdf, abandonTime, random);
+  const allBrks = makeBreaks(numAgents, shiftStart, shiftLength, breakDur, numBreaks);
+  const busyUntil = new Array(numAgents).fill(shiftStart);
+
+  const { events, results, abandonedCalls } = executeSimulationLoop(
+    calls,
+    allBrks,
+    numAgents,
+    shiftEnd,
+    serviceTarget,
+    busyUntil,
+  );
+
+  const { intervals, overall } = aggregateSimulationResults(
+    results,
+    abandonedCalls,
+    allBrks,
+    numAgents,
+    shiftStart,
+    shiftLength,
+    shiftEnd,
+  );
+
+  return {
+    params,
+    events,
+    results,
+    intervals,
+    allBrks,
+    abandonedCalls,
+    overall,
   };
 }
 
