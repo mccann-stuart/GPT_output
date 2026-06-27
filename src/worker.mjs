@@ -249,6 +249,7 @@ async function serveUploadedFile(request, env) {
   const headers = new Headers({
     'content-type': contentTypeForFile(file),
     'cache-control': 'no-cache',
+    'content-security-policy': "default-src 'none'; sandbox;",
   });
   if (object.httpEtag) {
     headers.set('etag', object.httpEtag);
