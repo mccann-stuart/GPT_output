@@ -217,12 +217,52 @@ function setupUploadSection() {
 
 function isOpenControlsShortcut(event) {
   const key = String(event.key || "").toLowerCase();
-  return (
+  const isDKey = event.code === "KeyD" || key === "d" || key === "∂";
+  const isOptionD =
     event.altKey &&
     !event.ctrlKey &&
     !event.metaKey &&
-    !event.shiftKey &&
-    (event.code === "KeyD" || key === "d")
+    !event.shiftKey;
+  const isSafariControlD =
+    isSafariBrowser() &&
+    event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.shiftKey;
+
+  return isDKey && (isOptionD || isSafariControlD);
+}
+
+function isSafariBrowser() {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /\bSafari\//.test(navigator.userAgent) &&
+    !/\b(?:Chrome|Chromium|CriOS|FxiOS|Edg|OPR)\//.test(
+      navigator.userAgent,
+    )
+  );
+}
+
+function isEditableShortcutTarget(target) {
+  if (!(target instanceof Element)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
+
+function addOpenControlsShortcut(openControls) {
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (isEditableShortcutTarget(event.target)) return;
+      if (!isOpenControlsShortcut(event)) return;
+      event.preventDefault();
+      openControls();
+    },
+    { capture: true },
   );
 }
 
@@ -236,11 +276,7 @@ function setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile }) {
     };
 
     if (topBar) {
-      window.addEventListener("keydown", (event) => {
-        if (!isOpenControlsShortcut(event)) return;
-        event.preventDefault();
-        openControls();
-      });
+      addOpenControlsShortcut(openControls);
     }
 
     if (minimizeBtn && topBar) {
@@ -263,12 +299,7 @@ function setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile }) {
 
     if (topNav && bottomTab && scrollContainer) {
       panelToggleBtn?.addEventListener("click", openControls);
-
-      window.addEventListener("keydown", (event) => {
-        if (!isOpenControlsShortcut(event)) return;
-        event.preventDefault();
-        openControls();
-      });
+      addOpenControlsShortcut(openControls);
     }
 
     if (minimizeBtn && topNav && bottomTab && scrollContainer) {

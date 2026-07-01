@@ -43,7 +43,7 @@ test("iPhone and desktop viewers import initViewer from viewer-shared.mjs, which
   }
 });
 
-test("viewer controls are opened through Option+D rather than a visible open button", () => {
+test("viewer controls are opened through shortcuts rather than a visible desktop open button", () => {
   const desktopHtml = readViewer("index.html");
   const iphoneHtml = readViewer("iphone.html");
   const sharedJs = readViewer("viewer-shared.mjs");
@@ -51,7 +51,9 @@ test("viewer controls are opened through Option+D rather than a visible open but
   assert.doesNotMatch(desktopHtml, /Open Controls|panel-toggle-btn/);
   assert.match(iphoneHtml, /panel-toggle-btn/);
 
-  assert.match(sharedJs, /window\.addEventListener\("keydown"/);
+  assert.match(sharedJs, /window\.addEventListener\(\s*"keydown"/);
   assert.match(sharedJs, /event\.altKey/);
   assert.match(sharedJs, /event\.code === "KeyD"/);
+  assert.match(sharedJs, /isSafariBrowser\(\)/);
+  assert.match(sharedJs, /event\.ctrlKey/);
 });
