@@ -5,7 +5,7 @@ const MAX_JSON_BODY_BYTES = 4096;
 const MAX_UPLOAD_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_UPLOAD_FILE_BYTES = 512 * 1024;
 const SAFE_DELIVERABLE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(jsx|mjs)$/;
-const LOCAL_IMPORT_PATTERN = /\b(?:import\s+[^'"]*?from|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
+const LOCAL_IMPORT_PATTERN = /\b(?:import(?:\s+[^'"]*?from|\s*)?|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
 const R2_UPLOAD_PREFIX = 'jsxupload/Files/';
 const R2_ROUTE_PREFIX = '/jsxupload/Files/';
 const BOE_IADB_CSV_ENDPOINT = 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp';
@@ -128,7 +128,7 @@ async function readUploadFiles(request) {
   }
 
   const seen = new Set();
-  const uploads = [];
+  const uploadPromises = [];
   let totalBytes = 0;
   for (const file of files) {
     const name = file.name || '';
@@ -146,8 +146,9 @@ async function readUploadFiles(request) {
     if (totalBytes > MAX_UPLOAD_BODY_BYTES) {
       throw new ApiRequestError(413, `Upload body must be ${MAX_UPLOAD_BODY_BYTES} bytes or less`);
     }
-    uploads.push({ name, text: await file.text() });
+    uploadPromises.push(file.text().then(text => ({ name, text })));
   }
+  const uploads = await Promise.all(uploadPromises);
 
   const jsxFiles = uploads.filter((file) => file.name.endsWith('.jsx'));
   if (jsxFiles.length !== 1) {
@@ -249,6 +250,7 @@ async function serveUploadedFile(request, env) {
   const headers = new Headers({
     'content-type': contentTypeForFile(file),
     'cache-control': 'no-cache',
+    'content-security-policy': "default-src 'none'; sandbox;",
   });
   if (object.httpEtag) {
     headers.set('etag', object.httpEtag);

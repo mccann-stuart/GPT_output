@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker from '../src/worker.mjs';
+import { makeR2Bucket } from './r2-mock.mjs';
 
 const originalFetch = globalThis.fetch;
 
@@ -33,54 +34,6 @@ function makeUploadRequest(files) {
     method: 'POST',
     body: form,
   });
-}
-
-function makeR2Object(key, value, options = {}, etag = `"etag-${key}"`) {
-  return {
-    key,
-    etag,
-    httpEtag: etag,
-    uploaded: new Date('2026-05-08T00:00:00.000Z'),
-    body: value,
-    httpMetadata: options.httpMetadata || {},
-    writeHttpMetadata(headers) {
-      if (this.httpMetadata.contentType) {
-        headers.set('content-type', this.httpMetadata.contentType);
-      }
-      if (this.httpMetadata.cacheControl) {
-        headers.set('cache-control', this.httpMetadata.cacheControl);
-      }
-    },
-  };
-}
-
-function makeR2Bucket(initialObjects = {}) {
-  const objects = new Map();
-  for (const [key, value] of Object.entries(initialObjects)) {
-    objects.set(key, makeR2Object(key, value));
-  }
-  return {
-    objects,
-    puts: [],
-    async put(key, value, options = {}) {
-      const object = makeR2Object(key, value, options, `"etag-${this.puts.length + 1}"`);
-      this.objects.set(key, object);
-      this.puts.push({ key, value, options });
-      return object;
-    },
-    async get(key) {
-      return this.objects.get(key) || null;
-    },
-    async list({ prefix = '' } = {}) {
-      const listedObjects = [...this.objects.values()]
-        .filter((object) => object.key.startsWith(prefix))
-        .map((object) => ({ key: object.key, etag: object.etag, uploaded: object.uploaded }));
-      return {
-        objects: listedObjects,
-        truncated: false,
-      };
-    },
-  };
 }
 
 const validPayload = {
@@ -325,6 +278,30 @@ test('worker rejects uploads with more than one JSX file', async () => {
 test('worker rejects uploaded JSX that imports a missing MJS file', async () => {
   const request = makeUploadRequest([
     { name: 'missing.jsx', text: 'import { value } from "./missing-logic.mjs";\nexport default function Missing() { return value; }' },
+  ]);
+
+  const response = await worker.fetch(request, makeUploadEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /missing file/i);
+});
+
+test('worker rejects uploaded JSX that side-effect imports a missing MJS file without space', async () => {
+  const request = makeUploadRequest([
+    { name: 'missing-side-effect-nospace.jsx', text: 'import"./missing-logic.mjs";\nexport default function Missing() { return null; }' },
+  ]);
+
+  const response = await worker.fetch(request, makeUploadEnv(), {});
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /missing file/i);
+});
+
+test('worker rejects uploaded JSX that side-effect imports a missing MJS file', async () => {
+  const request = makeUploadRequest([
+    { name: 'missing-side-effect.jsx', text: 'import "./missing-logic.mjs";\nexport default function Missing() { return null; }' },
   ]);
 
   const response = await worker.fetch(request, makeUploadEnv(), {});

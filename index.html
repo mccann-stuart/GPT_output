@@ -55,37 +55,6 @@
             background: var(--viewer-bg);
         }
 
-        #panel-toggle-btn {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            background: rgba(108, 61, 255, 0.9);
-            color: white;
-            border: none;
-            font-size: 28px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-        }
-
-        #panel-toggle-btn:hover {
-            background: rgba(90, 43, 209, 1);
-            transform: scale(1.05);
-        }
-
-        #panel-toggle-btn.hidden {
-            display: none;
-        }
-
         #top-bar {
             position: fixed;
             bottom: 24px;
@@ -333,7 +302,6 @@
 </head>
 
 <body>
-    <button id="panel-toggle-btn" title="Open Controls">⚙️</button>
     <div id="top-bar" class="hidden">
         <div class="panel-header">
             <span>Controls</span>

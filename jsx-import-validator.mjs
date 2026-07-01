@@ -1,7 +1,5 @@
+import babel from '@babel/standalone';
 import { supportedModuleSpecifierSet, supportedModulesDescription } from './supported-modules.mjs';
-
-const IMPORT_SPECIFIER_PATTERN =
-  /\bimport\s+(?:[^'"]*?\s+from\s*)?['"]([^'"]+)['"]|\bexport\s+[^'"]*?\s+from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
 function isBareSpecifier(specifier) {
   return !specifier.startsWith('.') &&
@@ -11,7 +9,40 @@ function isBareSpecifier(specifier) {
 }
 
 export function findJsxImportSpecifiers(source) {
-  return [...source.matchAll(IMPORT_SPECIFIER_PATTERN)].map((match) => match[1] || match[2] || match[3]);
+  let ast;
+  try {
+    ast = babel.packages.parser.parse(source, {
+      sourceType: 'module',
+      plugins: ['jsx']
+    });
+  } catch (error) {
+    // If it fails to parse as JS/JSX, throw to prevent fail-open bypasses.
+    throw new Error(`Failed to parse JSX: ${error.message}`);
+  }
+
+  const imports = [];
+  babel.packages.traverse.default(ast, {
+    ImportDeclaration(path) {
+      imports.push(path.node.source.value);
+    },
+    ExportNamedDeclaration(path) {
+      if (path.node.source) {
+        imports.push(path.node.source.value);
+      }
+    },
+    ExportAllDeclaration(path) {
+      imports.push(path.node.source.value);
+    },
+    CallExpression(path) {
+      if (path.node.callee.type === 'Import') {
+        if (path.node.arguments[0] && path.node.arguments[0].type === 'StringLiteral') {
+          imports.push(path.node.arguments[0].value);
+        }
+      }
+    }
+  });
+
+  return imports;
 }
 
 export function findUnsupportedJsxImports(source, { allowedModules } = {}) {
