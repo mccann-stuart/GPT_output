@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  browserTitleForFile,
+  faviconColorForFile,
+  faviconInitialsForFile,
   isSafeObjectKey,
   isAllowedManifestFile,
   truncateMiddle,
@@ -14,6 +17,24 @@ import {
   parseSharedState,
   isSafeUploadFileName
 } from "../viewer-shared.mjs";
+
+test("browser metadata helpers derive tab title and favicon identity from JSX filenames", () => {
+  assert.equal(
+    browserTitleForFile("MortgageRatePredictor.jsx"),
+    "MortgageRatePredictor.jsx",
+  );
+  assert.equal(browserTitleForFile(""), "JSX Viewer");
+
+  assert.equal(faviconInitialsForFile("MortgageRatePredictor.jsx"), "MR");
+  assert.equal(faviconInitialsForFile("SierraScenarioModel.jsx"), "SS");
+  assert.equal(faviconInitialsForFile("runway-model_v2.jsx"), "RM");
+  assert.equal(faviconInitialsForFile("a.jsx"), "A");
+
+  assert.match(
+    faviconColorForFile("MortgageRatePredictor.jsx"),
+    /^hsl\(\d{1,3}, 58%, 34%\)$/,
+  );
+});
 
 test("isSafeObjectKey blocks prototype pollution keys", () => {
   assert.equal(isSafeObjectKey("__proto__"), false);
