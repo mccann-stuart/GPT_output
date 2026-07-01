@@ -9,7 +9,12 @@ import { fileURLToPath } from 'node:url';
 import { listRootJsxFiles, toManifestJson } from './manifest-files.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const jsxFiles = listRootJsxFiles(root);
 
+listRootJsxFiles(root).then((jsxFiles) => {
+  const out = join(root, 'jsx-manifest.json');
+  writeFileSync(out, toManifestJson(jsxFiles));
+
+  console.log(`jsx-manifest.json → ${jsxFiles.length} file(s): ${jsxFiles.join(', ')}`);
+});
 const out = join(root, 'jsx-manifest.json');
 writeFileSync(out, toManifestJson(jsxFiles));

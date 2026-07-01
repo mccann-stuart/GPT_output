@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const publicDir = join(root, 'public');
 const vendorDir = join(publicDir, 'vendor');
 const vendorEntryDir = join(root, '.vendor-entrypoints-tmp');
-const rootFiles = listRootJsxFiles(root);
+const rootFiles = await listRootJsxFiles(root);
 const manifestJson = toManifestJson(rootFiles);
 writeFileSync(join(root, 'jsx-manifest.json'), manifestJson);
 
