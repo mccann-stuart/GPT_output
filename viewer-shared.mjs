@@ -215,47 +215,68 @@ function setupUploadSection() {
   }
 }
 
+function isOpenControlsShortcut(event) {
+  const key = String(event.key || "").toLowerCase();
+  return (
+    event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.shiftKey &&
+    (event.code === "KeyD" || key === "d")
+  );
+}
+
 function setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile }) {
-  // Panel Toggle Event Listeners
   if (!isMobile) {
     const topBar = document.getElementById("top-bar");
-    if (panelToggleBtn && topBar) {
-      panelToggleBtn.addEventListener("click", () => {
+    const openControls = () => {
+      if (topBar) {
         topBar.classList.remove("hidden");
-        panelToggleBtn.classList.add("hidden");
+      }
+    };
+
+    if (topBar) {
+      window.addEventListener("keydown", (event) => {
+        if (!isOpenControlsShortcut(event)) return;
+        event.preventDefault();
+        openControls();
       });
     }
-    if (minimizeBtn && topBar && panelToggleBtn) {
+
+    if (minimizeBtn && topBar) {
       minimizeBtn.addEventListener("click", () => {
         topBar.classList.add("hidden");
-        panelToggleBtn.classList.remove("hidden");
       });
     }
   } else {
     const topNav = document.getElementById("top-nav");
     const bottomTab = document.getElementById("bottom-tab");
     const scrollContainer = document.getElementById("scroll-container");
-
-    if (panelToggleBtn && topNav && bottomTab && scrollContainer) {
-      panelToggleBtn.addEventListener("click", () => {
+    const openControls = () => {
+      if (topNav && bottomTab && scrollContainer) {
         topNav.classList.remove("hidden");
         bottomTab.classList.remove("hidden");
         scrollContainer.classList.remove("expanded");
-        panelToggleBtn.classList.add("hidden");
+        panelToggleBtn?.classList.add("hidden");
+      }
+    };
+
+    if (topNav && bottomTab && scrollContainer) {
+      panelToggleBtn?.addEventListener("click", openControls);
+
+      window.addEventListener("keydown", (event) => {
+        if (!isOpenControlsShortcut(event)) return;
+        event.preventDefault();
+        openControls();
       });
     }
-    if (
-      minimizeBtn &&
-      topNav &&
-      bottomTab &&
-      scrollContainer &&
-      panelToggleBtn
-    ) {
+
+    if (minimizeBtn && topNav && bottomTab && scrollContainer) {
       minimizeBtn.addEventListener("click", () => {
         topNav.classList.add("hidden");
         bottomTab.classList.add("hidden");
         scrollContainer.classList.add("expanded");
-        panelToggleBtn.classList.remove("hidden");
+        panelToggleBtn?.classList.remove("hidden");
       });
     }
   }
