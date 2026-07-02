@@ -18,8 +18,8 @@ function importMapFromHtml(html) {
 
 test('desktop and iPhone import maps are equivalent and cover every supported module', async () => {
   const [desktopHtml, iphoneHtml] = await Promise.all([
-    readFile(join(rootDir, 'index.html'), 'utf8'),
-    readFile(join(rootDir, 'iphone.html'), 'utf8'),
+    readFile(join(rootDir, 'public', 'index.html'), 'utf8'),
+    readFile(join(rootDir, 'public', 'iphone.html'), 'utf8'),
   ]);
 
   const expectedImportMap = browserImportMap();

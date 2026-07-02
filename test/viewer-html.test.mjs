@@ -6,7 +6,7 @@ import { join } from "node:path";
 const root = new URL("..", import.meta.url).pathname;
 
 function readViewer(file) {
-  return readFileSync(join(root, file), "utf8");
+  return readFileSync(join(root, "public", file), "utf8");
 }
 
 test("iPhone and desktop viewers import initViewer from viewer-shared.mjs, which contains the R2 logic", () => {
