@@ -37,6 +37,9 @@ Deliverables as code. This project renders consulting deliverables as webpages, 
 ## Deployment
 - Wrangler serves static assets from `public/`, while the simulation engine stays behind `POST /api/simulate` in the Worker.
 - Local `wrangler dev` and `wrangler deploy` run `npm run build:public` via `wrangler.jsonc` before deploying.
+- Check Cloudflare auth with `npm run cf:whoami`.
+- Validate a deploy without publishing with `npm run cf:deploy:dry-run`.
+- Deploy the Worker with `npm run cf:deploy` only after reviewing the dry-run output.
 - If this repo is connected to Cloudflare Workers Builds from Git, set the same build command in the Cloudflare dashboard because Workers Builds does not use Wrangler custom build config.
 - Hosted uploads require an R2 bucket named `jsxupload` bound to the Worker as `JSX_UPLOADS`.
 - Uploaded deliverables use object keys under `jsxupload/Files/`; existing repo-root `.jsx` and `.mjs` files remain static assets.

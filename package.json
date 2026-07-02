@@ -8,6 +8,10 @@
     "manifest": "node generate-manifest.mjs",
     "build:public": "node prepare-public.mjs",
     "predeploy": "npm run build:public",
+    "cf:whoami": "WRANGLER_WRITE_LOGS=false wrangler whoami",
+    "cf:dev": "WRANGLER_WRITE_LOGS=false wrangler dev",
+    "cf:deploy": "WRANGLER_WRITE_LOGS=false wrangler deploy",
+    "cf:deploy:dry-run": "WRANGLER_WRITE_LOGS=false wrangler deploy --dry-run",
     "test": "node --test test/*.test.mjs",
     "test:simulate": "node --test test/simulate-engine.test.mjs test/worker.test.mjs test/simulate-client.test.mjs",
     "bench:clone": "node benchmark_clone.mjs"
@@ -25,7 +29,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^3.8.1",
-    "tone": "^15.1.22"
+    "tone": "^15.1.22",
+    "wrangler": "^4.107.0"
   },
   "license": "ISC"
 }
