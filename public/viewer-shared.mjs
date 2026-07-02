@@ -504,9 +504,87 @@ function setupPanelToggles({
       }
     };
 
+    const addShakeToOpenControls = (openFn) => {
+      let lastX = null, lastY = null, lastZ = null;
+      let lastUpdate = 0;
+      const SHAKE_THRESHOLD = 15; // total change in acceleration in m/s^2 over 100ms
+      const SHAKE_TIMEOUT = 1000;
+      let shakeCount = 0;
+      let lastShakeTime = 0;
+
+      const onDeviceMotion = (event) => {
+        const current = Date.now();
+        if (current - lastUpdate < 100) return;
+
+        const acc = event.acceleration || event.accelerationIncludingGravity;
+        if (!acc) return;
+
+        const x = acc.x;
+        const y = acc.y;
+        const z = acc.z;
+
+        if (x === null || y === null || z === null) return;
+
+        if (lastX !== null) {
+          const deltaX = Math.abs(x - lastX);
+          const deltaY = Math.abs(y - lastY);
+          const deltaZ = Math.abs(z - lastZ);
+          const change = deltaX + deltaY + deltaZ;
+
+          if (change > SHAKE_THRESHOLD) {
+            const timeDiff = current - lastShakeTime;
+            if (timeDiff > 200 && timeDiff < SHAKE_TIMEOUT) {
+              shakeCount++;
+              if (shakeCount >= 2) {
+                openFn();
+                shakeCount = 0;
+              }
+            } else if (timeDiff >= SHAKE_TIMEOUT || lastShakeTime === 0) {
+              shakeCount = 1;
+            }
+            lastShakeTime = current;
+          }
+        }
+
+        lastX = x;
+        lastY = y;
+        lastZ = z;
+        lastUpdate = current;
+      };
+
+      const startListening = () => {
+        window.addEventListener("devicemotion", onDeviceMotion, true);
+      };
+
+      if (
+        typeof DeviceMotionEvent !== "undefined" &&
+        typeof DeviceMotionEvent.requestPermission === "function"
+      ) {
+        const requestPermission = () => {
+          DeviceMotionEvent.requestPermission()
+            .then((state) => {
+              if (state === "granted") {
+                startListening();
+              }
+            })
+            .catch((err) => {
+              console.error("Error requesting DeviceMotion permission:", err);
+            });
+          window.removeEventListener("click", requestPermission);
+          window.removeEventListener("touchstart", requestPermission);
+        };
+
+        window.addEventListener("click", requestPermission);
+        window.addEventListener("touchstart", requestPermission);
+      } else {
+        startListening();
+      }
+    };
+
     if (topNav && bottomTab && scrollContainer) {
       panelToggleBtn?.addEventListener("click", openControls);
       addOpenControlsShortcut(openControls);
+      addShakeToOpenControls(openControls);
     }
 
     if (minimizeBtn && topNav && bottomTab && scrollContainer) {
@@ -515,7 +593,7 @@ function setupPanelToggles({
         topNav.classList.add("hidden");
         bottomTab.classList.add("hidden");
         scrollContainer.classList.add("expanded");
-        panelToggleBtn?.classList.remove("hidden");
+        // Keep panelToggleBtn hidden (do not remove "hidden" class)
         if (wasVisible) {
           onCloseControls?.();
         }

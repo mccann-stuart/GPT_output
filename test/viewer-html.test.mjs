@@ -56,6 +56,12 @@ test("viewer controls are opened through shortcuts rather than a visible desktop
   assert.match(sharedJs, /event\.code === "KeyD"/);
   assert.match(sharedJs, /isSafariBrowser\(\)/);
   assert.match(sharedJs, /event\.ctrlKey/);
+
+  // Assertions for mobile shake gesture controls
+  assert.match(sharedJs, /devicemotion/);
+  assert.match(sharedJs, /DeviceMotionEvent/);
+  assert.match(sharedJs, /requestPermission/);
+  assert.match(sharedJs, /acceleration/);
 });
 
 test("viewer shells configure Google Analytics using standard config", () => {
