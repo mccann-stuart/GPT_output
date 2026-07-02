@@ -57,3 +57,17 @@ test("viewer controls are opened through shortcuts rather than a visible desktop
   assert.match(sharedJs, /isSafariBrowser\(\)/);
   assert.match(sharedJs, /event\.ctrlKey/);
 });
+
+test("viewer shells configure Google Analytics without automatic page views", () => {
+  const desktopHtml = readViewer("index.html");
+  const iphoneHtml = readViewer("iphone.html");
+  const gaScript =
+    /https:\/\/www\.googletagmanager\.com\/gtag\/js\?id=G-HFPWB2XVCM/;
+  const disabledPageView =
+    /gtag\('config', 'G-HFPWB2XVCM', \{ send_page_view: false \}\);/;
+
+  assert.match(desktopHtml, gaScript);
+  assert.match(iphoneHtml, gaScript);
+  assert.match(desktopHtml, disabledPageView);
+  assert.match(iphoneHtml, disabledPageView);
+});

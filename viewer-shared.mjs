@@ -1,8 +1,11 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 
+export const GA_MEASUREMENT_ID = "G-HFPWB2XVCM";
 const DEFAULT_BROWSER_TITLE = "JSX Viewer";
 const FAVICON_LINK_ID = "viewer-dynamic-favicon";
+const SHARE_PARAM = "state";
+const MAX_SHARED_STATE_LENGTH = 12000;
 
 function stemForFilename(filename) {
   if (typeof filename !== "string") return "";
@@ -75,15 +78,86 @@ function updateBrowserMetadata(filename) {
   link.href = faviconHref;
 }
 
-function setupClipboardCopy(copyLinkBtn, shareUrlEl) {
+function defaultAnalyticsBaseUrl() {
+  if (typeof window !== "undefined" && window.location?.href) {
+    return window.location.href;
+  }
+  return "https://viewer.local/";
+}
+
+function compactAnalyticsParams(params) {
+  const compacted = {};
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    compacted[key] = value;
+  });
+  return compacted;
+}
+
+export function viewerTypeForMobile(isMobile) {
+  return isMobile ? "iphone" : "desktop";
+}
+
+export function sanitizedAnalyticsUrlParts(
+  urlLike,
+  baseUrl = defaultAnalyticsBaseUrl(),
+) {
+  const url = new URL(urlLike || baseUrl, baseUrl);
+  url.searchParams.delete(SHARE_PARAM);
+  const pagePath = `${url.pathname}${url.search}${url.hash}`;
+  return {
+    page_location: url.toString(),
+    page_path: pagePath,
+  };
+}
+
+export function analyticsParamsForViewer({
+  urlLike,
+  viewerType,
+  fileName,
+  fileSource,
+  extraParams = {},
+} = {}) {
+  const routeParams = sanitizedAnalyticsUrlParts(urlLike);
+  return compactAnalyticsParams({
+    ...routeParams,
+    route_path: routeParams.page_path,
+    viewer_type: viewerType,
+    file_name: fileName,
+    file_source: fileSource,
+    ...extraParams,
+  });
+}
+
+function sendAnalyticsEvent(eventName, params = {}) {
+  if (
+    typeof window === "undefined" ||
+    typeof window.gtag !== "function" ||
+    typeof eventName !== "string" ||
+    eventName.length === 0
+  ) {
+    return;
+  }
+
+  try {
+    window.gtag("event", eventName, {
+      send_to: GA_MEASUREMENT_ID,
+      ...params,
+    });
+  } catch (err) {
+    console.warn("Analytics event failed:", err);
+  }
+}
+
+function setupClipboardCopy(copyLinkBtn, shareUrlEl, { onCopy } = {}) {
   if (copyLinkBtn) {
     copyLinkBtn.addEventListener("click", async () => {
       const link = shareUrlEl?.value;
       if (!link) return;
-      try {
-        await navigator.clipboard.writeText(link);
-        const originalText = copyLinkBtn.textContent;
-        const spanEl = copyLinkBtn.querySelector("span");
+      let copied = false;
+      const originalText = copyLinkBtn.textContent;
+      const spanEl = copyLinkBtn.querySelector("span");
+      const showCopiedFeedback = () => {
         if (spanEl) {
           spanEl.textContent = "Copied!";
           setTimeout(() => {
@@ -95,6 +169,12 @@ function setupClipboardCopy(copyLinkBtn, shareUrlEl) {
             copyLinkBtn.textContent = originalText;
           }, 2000);
         }
+      };
+
+      try {
+        await navigator.clipboard.writeText(link);
+        copied = true;
+        showCopiedFeedback();
       } catch (err) {
         console.warn(
           "Clipboard API unavailable, falling back to text selection.",
@@ -103,14 +183,36 @@ function setupClipboardCopy(copyLinkBtn, shareUrlEl) {
         if (shareUrlEl) {
           shareUrlEl.focus();
           shareUrlEl.select();
-          document.execCommand("copy");
+          copied = document.execCommand("copy");
+          if (copied) {
+            showCopiedFeedback();
+          }
         }
+      }
+      if (copied) {
+        onCopy?.();
       }
     });
   }
 }
 
-function setupUploadSection() {
+function summarizeUploadFiles(files) {
+  const fileList = Array.from(files || []);
+  return {
+    upload_file_count: fileList.length,
+    upload_jsx_count: fileList.filter((file) => file.name.endsWith(".jsx"))
+      .length,
+    upload_mjs_count: fileList.filter((file) => file.name.endsWith(".mjs"))
+      .length,
+  };
+}
+
+function setupUploadSection({
+  onUploadPanelOpened,
+  onUploadSubmitted,
+  onUploadSucceeded,
+  onUploadFailed,
+} = {}) {
   // Optional Upload Section (Desktop-only)
   const uploadToggleBtn = document.getElementById("upload-toggle-btn");
   const uploadSection = document.getElementById("upload-section");
@@ -200,6 +302,10 @@ function setupUploadSection() {
     const validationError = validateUploadFiles(selectedUploadFiles);
     if (validationError) {
       setUploadError(validationError);
+      onUploadFailed?.({
+        ...summarizeUploadFiles(selectedUploadFiles),
+        upload_failure_type: "validation",
+      });
       return;
     }
 
@@ -215,6 +321,7 @@ function setupUploadSection() {
     if (uploadStatusEl) {
       uploadStatusEl.textContent = "Uploading files to Cloudflare R2...";
     }
+    onUploadSubmitted?.(summarizeUploadFiles(selectedUploadFiles));
 
     try {
       const response = await fetch("/api/upload-deliverable", {
@@ -230,6 +337,7 @@ function setupUploadSection() {
       if (uploadStatusEl) {
         uploadStatusEl.textContent = `Stored ${body.jsxFile} in Cloudflare R2. Opening...`;
       }
+      onUploadSucceeded?.(summarizeUploadFiles(selectedUploadFiles));
       window.location.assign(body.openUrl);
     } catch (err) {
       setUploadError(err.message || "Upload failed.");
@@ -239,6 +347,10 @@ function setupUploadSection() {
       if (uploadSubmitBtn) {
         uploadSubmitBtn.disabled = false;
       }
+      onUploadFailed?.({
+        ...summarizeUploadFiles(selectedUploadFiles),
+        upload_failure_type: "request",
+      });
     }
   }
 
@@ -247,6 +359,9 @@ function setupUploadSection() {
       const willOpen = uploadSection.classList.contains("hidden");
       uploadSection.classList.toggle("hidden", !willOpen);
       topBar.classList.toggle("upload-open", willOpen);
+      if (willOpen) {
+        onUploadPanelOpened?.();
+      }
     });
   }
 
@@ -340,12 +455,22 @@ function addOpenControlsShortcut(openControls) {
   );
 }
 
-function setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile }) {
+function setupPanelToggles({
+  panelToggleBtn,
+  minimizeBtn,
+  isMobile,
+  onOpenControls,
+  onCloseControls,
+}) {
   if (!isMobile) {
     const topBar = document.getElementById("top-bar");
     const openControls = () => {
       if (topBar) {
+        const wasHidden = topBar.classList.contains("hidden");
         topBar.classList.remove("hidden");
+        if (wasHidden) {
+          onOpenControls?.();
+        }
       }
     };
 
@@ -355,7 +480,11 @@ function setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile }) {
 
     if (minimizeBtn && topBar) {
       minimizeBtn.addEventListener("click", () => {
+        const wasVisible = !topBar.classList.contains("hidden");
         topBar.classList.add("hidden");
+        if (wasVisible) {
+          onCloseControls?.();
+        }
       });
     }
   } else {
@@ -364,10 +493,14 @@ function setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile }) {
     const scrollContainer = document.getElementById("scroll-container");
     const openControls = () => {
       if (topNav && bottomTab && scrollContainer) {
+        const wasHidden = topNav.classList.contains("hidden");
         topNav.classList.remove("hidden");
         bottomTab.classList.remove("hidden");
         scrollContainer.classList.remove("expanded");
         panelToggleBtn?.classList.add("hidden");
+        if (wasHidden) {
+          onOpenControls?.();
+        }
       }
     };
 
@@ -378,10 +511,14 @@ function setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile }) {
 
     if (minimizeBtn && topNav && bottomTab && scrollContainer) {
       minimizeBtn.addEventListener("click", () => {
+        const wasVisible = !topNav.classList.contains("hidden");
         topNav.classList.add("hidden");
         bottomTab.classList.add("hidden");
         scrollContainer.classList.add("expanded");
         panelToggleBtn?.classList.remove("hidden");
+        if (wasVisible) {
+          onCloseControls?.();
+        }
       });
     }
   }
@@ -417,8 +554,6 @@ function registerGlobalErrorHandlers() {
   });
 }
 
-const SHARE_PARAM = "state";
-const MAX_SHARED_STATE_LENGTH = 12000;
 export function isSafeObjectKey(key) {
   return key !== "__proto__" && key !== "prototype" && key !== "constructor";
 }
@@ -572,6 +707,8 @@ export async function initViewer(options = {}) {
     selectLabelAverageCharRatio = 0.56,
   } = options;
 
+  const viewerType = viewerTypeForMobile(isMobile);
+
   registerGlobalErrorHandlers();
 
   // DOM Elements
@@ -602,6 +739,19 @@ export async function initViewer(options = {}) {
   let renderVersion = 0;
 
   // Helper functions
+
+  function trackViewerEvent(eventName, extraParams = {}) {
+    sendAnalyticsEvent(
+      eventName,
+      analyticsParamsForViewer({
+        urlLike: window.location.href,
+        viewerType,
+        fileName: currentFile,
+        fileSource: currentFileSource,
+        extraParams,
+      }),
+    );
+  }
 
   function getSelectLabelMaxLength() {
     if (!selectEl) return selectLabelMaxLength;
@@ -928,7 +1078,19 @@ export async function initViewer(options = {}) {
       currentMountKey = `${filename}:${++renderVersion}`;
       renderCurrentComponent();
       updateShareUrl({ pushHistory });
+      trackViewerEvent("page_view", {
+        page_title: browserTitleForFile(currentFile),
+      });
+      trackViewerEvent("viewer_file_loaded");
     } catch (err) {
+      const failedFileSource = FILE_SOURCES.has(filename)
+        ? sourceForFile(filename)
+        : "unknown";
+      trackViewerEvent("viewer_file_load_failed", {
+        file_name: filename,
+        file_source: failedFileSource,
+        error_name: err?.name || "Error",
+      });
       console.error(err);
       root.render(
         React.createElement(
@@ -961,10 +1123,13 @@ export async function initViewer(options = {}) {
       currentMountKey = `${currentFile}:${++renderVersion}`;
       renderCurrentComponent();
       updateShareUrl();
+      trackViewerEvent("viewer_reset");
     });
   }
 
-  setupClipboardCopy(copyLinkBtn, shareUrlEl);
+  setupClipboardCopy(copyLinkBtn, shareUrlEl, {
+    onCopy: () => trackViewerEvent("viewer_share_copied"),
+  });
 
   window.addEventListener("popstate", () => {
     const { initialFile, initialOverrides } = getStateFromUrl(
@@ -976,9 +1141,23 @@ export async function initViewer(options = {}) {
     });
   });
 
-  setupPanelToggles({ panelToggleBtn, minimizeBtn, isMobile });
+  setupPanelToggles({
+    panelToggleBtn,
+    minimizeBtn,
+    isMobile,
+    onOpenControls: () => trackViewerEvent("viewer_controls_opened"),
+    onCloseControls: () => trackViewerEvent("viewer_controls_closed"),
+  });
 
-  setupUploadSection();
+  setupUploadSection({
+    onUploadPanelOpened: () => trackViewerEvent("viewer_upload_panel_opened"),
+    onUploadSubmitted: (params) =>
+      trackViewerEvent("viewer_upload_submitted", params),
+    onUploadSucceeded: (params) =>
+      trackViewerEvent("viewer_upload_succeeded", params),
+    onUploadFailed: (params) =>
+      trackViewerEvent("viewer_upload_failed", params),
+  });
 
   // Initialize: fetch manifest, then load from URL param or first file
   try {

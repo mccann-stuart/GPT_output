@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  GA_MEASUREMENT_ID,
+  analyticsParamsForViewer,
   browserTitleForFile,
   faviconColorForFile,
   faviconInitialsForFile,
@@ -15,8 +17,57 @@ import {
   encodeBase64Url,
   decodeBase64Url,
   parseSharedState,
-  isSafeUploadFileName
+  isSafeUploadFileName,
+  sanitizedAnalyticsUrlParts,
+  viewerTypeForMobile,
 } from "../viewer-shared.mjs";
+
+test("viewer analytics helpers expose the configured measurement id", () => {
+  assert.equal(GA_MEASUREMENT_ID, "G-HFPWB2XVCM");
+});
+
+test("viewerTypeForMobile maps viewer shells to analytics view types", () => {
+  assert.equal(viewerTypeForMobile(true), "iphone");
+  assert.equal(viewerTypeForMobile(false), "desktop");
+});
+
+test("sanitizedAnalyticsUrlParts strips shared state from analytics URLs", () => {
+  assert.deepEqual(
+    sanitizedAnalyticsUrlParts(
+      "https://example.test/iphone.html?file=Deck.jsx&state=opaque&desktop=1#page",
+    ),
+    {
+      page_location:
+        "https://example.test/iphone.html?file=Deck.jsx&desktop=1#page",
+      page_path: "/iphone.html?file=Deck.jsx&desktop=1#page",
+    },
+  );
+});
+
+test("analyticsParamsForViewer builds compact common event parameters", () => {
+  assert.deepEqual(
+    analyticsParamsForViewer({
+      urlLike:
+        "https://example.test/index.html?file=Deck.jsx&state=opaque",
+      viewerType: "desktop",
+      fileName: "Deck.jsx",
+      fileSource: "r2",
+      extraParams: {
+        upload_file_count: 2,
+        ignored_empty: "",
+      },
+    }),
+    {
+      page_location: "https://example.test/index.html?file=Deck.jsx",
+      page_path: "/index.html?file=Deck.jsx",
+      route_path: "/index.html?file=Deck.jsx",
+      viewer_type: "desktop",
+      file_name: "Deck.jsx",
+      file_source: "r2",
+      upload_file_count: 2,
+    },
+  );
+});
 
 test("browser metadata helpers derive tab title and favicon identity from JSX filenames", () => {
   assert.equal(
