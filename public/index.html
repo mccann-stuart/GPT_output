@@ -23,9 +23,9 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-HFPWB2XVCM"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
+        function gtag() { dataLayer.push(arguments); }
         gtag('js', new Date());
-        gtag('config', 'G-HFPWB2XVCM', { send_page_view: false });
+        gtag('config', 'G-HFPWB2XVCM');
     </script>
     <title>JSX Viewer</title>
     <!-- Import map for supported local browser modules -->
@@ -326,7 +326,8 @@
         </div>
         <div id="upload-section" class="upload-section hidden">
             <input id="upload-input" type="file" accept=".jsx,.mjs" multiple hidden />
-            <div id="upload-dropzone" class="upload-dropzone" role="button" tabindex="0" aria-label="Upload JSX and MJS files">
+            <div id="upload-dropzone" class="upload-dropzone" role="button" tabindex="0"
+                aria-label="Upload JSX and MJS files">
                 <span class="upload-title">Drop .jsx and .mjs files</span>
                 <span class="upload-hint">Use one JSX component plus any flat local MJS logic imports.</span>
             </div>
@@ -342,7 +343,7 @@
     </div>
     <div id="root"></div>
 
-        <script type="module">
+    <script type="module">
         import React from 'react';
         import { initViewer } from './viewer-shared.mjs';
 
