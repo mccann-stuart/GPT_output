@@ -455,6 +455,67 @@ function addOpenControlsShortcut(openControls) {
   );
 }
 
+export function addDeviceMotionPermissionTapHandler({
+  target = typeof window !== "undefined" ? window : undefined,
+  motionEvent =
+    typeof DeviceMotionEvent !== "undefined" ? DeviceMotionEvent : undefined,
+  startListening,
+  onError = (err) => {
+    console.error("Error requesting DeviceMotion permission:", err);
+  },
+} = {}) {
+  if (typeof startListening !== "function") return () => {};
+
+  if (
+    !motionEvent ||
+    typeof motionEvent.requestPermission !== "function"
+  ) {
+    startListening();
+    return () => {};
+  }
+
+  if (!target || typeof target.addEventListener !== "function") {
+    return () => {};
+  }
+
+  let hasRequested = false;
+  const requestPermission = () => {
+    if (hasRequested) return;
+    hasRequested = true;
+
+    let permissionRequest;
+    try {
+      permissionRequest = motionEvent.requestPermission();
+    } catch (err) {
+      cleanup();
+      onError(err);
+      return;
+    }
+
+    Promise.resolve(permissionRequest)
+      .then((state) => {
+        if (state === "granted") {
+          startListening();
+        }
+      })
+      .catch((err) => {
+        onError(err);
+      })
+      .finally(cleanup);
+  };
+
+  const cleanup = () => {
+    target.removeEventListener?.("click", requestPermission, true);
+  };
+
+  target.addEventListener("click", requestPermission, {
+    capture: true,
+    once: true,
+  });
+
+  return cleanup;
+}
+
 function setupPanelToggles({
   panelToggleBtn,
   minimizeBtn,
@@ -556,29 +617,7 @@ function setupPanelToggles({
         window.addEventListener("devicemotion", onDeviceMotion, true);
       };
 
-      if (
-        typeof DeviceMotionEvent !== "undefined" &&
-        typeof DeviceMotionEvent.requestPermission === "function"
-      ) {
-        const requestPermission = () => {
-          DeviceMotionEvent.requestPermission()
-            .then((state) => {
-              if (state === "granted") {
-                startListening();
-              }
-            })
-            .catch((err) => {
-              console.error("Error requesting DeviceMotion permission:", err);
-            });
-          window.removeEventListener("click", requestPermission);
-          window.removeEventListener("touchstart", requestPermission);
-        };
-
-        window.addEventListener("click", requestPermission);
-        window.addEventListener("touchstart", requestPermission);
-      } else {
-        startListening();
-      }
+      addDeviceMotionPermissionTapHandler({ startListening });
     };
 
     if (topNav && bottomTab && scrollContainer) {

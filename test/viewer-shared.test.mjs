@@ -20,6 +20,7 @@ import {
   isSafeUploadFileName,
   sanitizedAnalyticsUrlParts,
   viewerTypeForMobile,
+  addDeviceMotionPermissionTapHandler,
 } from "../public/viewer-shared.mjs";
 
 test("viewer analytics helpers expose the configured measurement id", () => {
@@ -29,6 +30,66 @@ test("viewer analytics helpers expose the configured measurement id", () => {
 test("viewerTypeForMobile maps viewer shells to analytics view types", () => {
   assert.equal(viewerTypeForMobile(true), "iphone");
   assert.equal(viewerTypeForMobile(false), "desktop");
+});
+
+test("device motion permission is requested from a click activation", async () => {
+  const listeners = new Map();
+  const target = {
+    addEventListener(type, handler, options) {
+      listeners.set(type, { handler, options });
+    },
+    removeEventListener(type) {
+      listeners.delete(type);
+    },
+  };
+  let permissionRequests = 0;
+  let listenCalls = 0;
+
+  addDeviceMotionPermissionTapHandler({
+    target,
+    motionEvent: {
+      requestPermission() {
+        permissionRequests += 1;
+        return Promise.resolve("granted");
+      },
+    },
+    startListening() {
+      listenCalls += 1;
+    },
+    onError: assert.fail,
+  });
+
+  assert.equal(listeners.has("click"), true);
+  assert.equal(listeners.has("touchstart"), false);
+  assert.deepEqual(listeners.get("click").options, {
+    capture: true,
+    once: true,
+  });
+
+  listeners.get("click").handler();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(permissionRequests, 1);
+  assert.equal(listenCalls, 1);
+  assert.equal(listeners.has("click"), false);
+});
+
+test("device motion listener starts immediately when no permission API exists", () => {
+  let listenCalls = 0;
+
+  addDeviceMotionPermissionTapHandler({
+    target: {
+      addEventListener() {
+        assert.fail("listener should not be registered without permission API");
+      },
+    },
+    motionEvent: {},
+    startListening() {
+      listenCalls += 1;
+    },
+  });
+
+  assert.equal(listenCalls, 1);
 });
 
 test("sanitizedAnalyticsUrlParts strips shared state from analytics URLs", () => {
