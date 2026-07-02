@@ -1,10 +1,12 @@
-import { readdirSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 
 export function listRootJsxFiles(root) {
-  return readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsx'))
-    .map((entry) => entry.name)
-    .sort();
+  return readdir(root, { withFileTypes: true }).then((entries) =>
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.jsx') && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort()
+  );
 }
 
 export function toManifestJson(files) {
