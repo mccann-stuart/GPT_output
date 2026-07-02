@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,12 +14,31 @@ const require = createRequire(import.meta.url);
 const publicDir = join(root, 'public');
 const vendorDir = join(publicDir, 'vendor');
 const vendorEntryDir = join(root, '.vendor-entrypoints-tmp');
+const publicSourceFiles = new Set(['index.html', 'iphone.html', 'viewer-shared.mjs']);
 const rootFiles = await listRootJsxFiles(root);
 const manifestJson = toManifestJson(rootFiles);
-writeFileSync(join(root, 'jsx-manifest.json'), manifestJson);
 
-rmSync(publicDir, { recursive: true, force: true });
-mkdirSync(publicDir, { recursive: true });
+function cleanGeneratedPublicAssets() {
+  mkdirSync(publicDir, { recursive: true });
+
+  const missingSourceFiles = [...publicSourceFiles].filter(
+    (file) => !existsSync(join(publicDir, file)),
+  );
+  if (missingSourceFiles.length > 0) {
+    throw new Error(
+      `Missing public source file(s): ${missingSourceFiles.join(', ')}`,
+    );
+  }
+
+  for (const entry of readdirSync(publicDir, { withFileTypes: true })) {
+    if (publicSourceFiles.has(entry.name)) {
+      continue;
+    }
+    rmSync(join(publicDir, entry.name), { recursive: true, force: true });
+  }
+}
+
+cleanGeneratedPublicAssets();
 mkdirSync(vendorDir, { recursive: true });
 mkdirSync(vendorEntryDir, { recursive: true });
 
@@ -263,9 +282,6 @@ async function vendorBrowserModules() {
   copyFileSync(join(root, 'vendor', 'uploaded-jsx-utilities.css'), join(vendorDir, 'uploaded-jsx-utilities.css'));
 }
 
-for (const file of ['index.html', 'iphone.html', 'viewer-shared.mjs']) {
-  copyFileSync(join(root, file), join(publicDir, file));
-}
 writeFileSync(join(publicDir, 'jsx-manifest.json'), manifestJson);
 
 const seen = new Set();

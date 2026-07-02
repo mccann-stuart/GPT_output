@@ -30,9 +30,10 @@ Deliverables as code. This project renders consulting deliverables as webpages, 
 - Public uploads intentionally publish executable JSX/MJS to the site from R2. Only enable the R2 upload binding with that risk accepted.
 
 ## Generated assets
-- `npm run manifest` refreshes the root `jsx-manifest.json` used by the local viewers.
+- The maintained viewer shell lives in `public/index.html`, `public/iphone.html`, and `public/viewer-shared.mjs`; Wrangler serves these files directly.
+- `npm run manifest` refreshes the generated `public/jsx-manifest.json` used by the viewers.
 - `npm run build:public` regenerates the deployable static asset set under `public/`.
-- `public/` is generated output and is not source-controlled.
+- Generated `public/` assets such as `vendor/`, copied deliverables, and `jsx-manifest.json` are not source-controlled.
 
 ## Deployment
 - Wrangler serves static assets from `public/`, while the simulation engine stays behind `POST /api/simulate` in the Worker.

@@ -20,7 +20,7 @@ import {
   isSafeUploadFileName,
   sanitizedAnalyticsUrlParts,
   viewerTypeForMobile,
-} from "../viewer-shared.mjs";
+} from "../public/viewer-shared.mjs";
 
 test("viewer analytics helpers expose the configured measurement id", () => {
   assert.equal(GA_MEASUREMENT_ID, "G-HFPWB2XVCM");
