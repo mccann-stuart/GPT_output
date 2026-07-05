@@ -257,20 +257,22 @@ function vendorBannerFor(module) {
 
 async function vendorBrowserModules() {
   try {
-    for (const module of SUPPORTED_BROWSER_MODULES) {
-      await build({
-        entryPoints: [vendorEntryPointFor(module)],
-        outfile: join(vendorDir, module.vendorFile),
-        bundle: true,
-        format: 'esm',
-        platform: 'browser',
-        target: 'es2020',
-        absWorkingDir: root,
-        external: module.bundleExternal,
-        banner: vendorBannerFor(module),
-        logLevel: 'silent',
-      });
-    }
+    await Promise.all(
+      SUPPORTED_BROWSER_MODULES.map((module) =>
+        build({
+          entryPoints: [vendorEntryPointFor(module)],
+          outfile: join(vendorDir, module.vendorFile),
+          bundle: true,
+          format: 'esm',
+          platform: 'browser',
+          target: 'es2020',
+          absWorkingDir: root,
+          external: module.bundleExternal,
+          banner: vendorBannerFor(module),
+          logLevel: 'silent',
+        })
+      )
+    );
   } finally {
     rmSync(vendorEntryDir, { recursive: true, force: true });
   }
