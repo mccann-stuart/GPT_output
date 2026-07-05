@@ -348,15 +348,25 @@ function makeBreaks(numAgents, shiftStart, shiftLength, breakDur, numBreaks) {
   return result;
 }
 
-function nextAvail(at, busyUntil, brks) {
+function nextAvail(at, busyUntil, brks, activeBrkIdx, a) {
   let t = Math.max(at, busyUntil);
+  let idx = activeBrkIdx[a];
+
+  while (idx < brks.length && brks[idx].e <= t) {
+    idx++;
+  }
+  activeBrkIdx[a] = idx;
+
   let changed = true;
   while (changed) {
     changed = false;
-    for (const brk of brks) {
+    for (let i = idx; i < brks.length; i++) {
+      const brk = brks[i];
       if (t >= brk.s && t < brk.e) {
         t = brk.e;
         changed = true;
+      } else if (brk.s > t) {
+        break;
       }
     }
   }
@@ -368,6 +378,7 @@ function executeSimulationLoop(calls, allBrks, numAgents, shiftEnd, serviceTarge
   const results = [];
   const abandonedCalls = [];
   let callId = 0;
+  const activeBrkIdx = new Array(numAgents).fill(0);
 
   for (let a = 0; a < numAgents; a++) {
     for (const brk of allBrks[a]) {
@@ -394,9 +405,9 @@ function executeSimulationLoop(calls, allBrks, numAgents, shiftEnd, serviceTarge
     }
 
     let bestA = 0;
-    let bestAt = nextAvail(call.arrival, busyUntil[0], allBrks[0]);
+    let bestAt = nextAvail(call.arrival, busyUntil[0], allBrks[0], activeBrkIdx, 0);
     for (let a = 1; a < numAgents; a++) {
-      const at = nextAvail(call.arrival, busyUntil[a], allBrks[a]);
+      const at = nextAvail(call.arrival, busyUntil[a], allBrks[a], activeBrkIdx, a);
       if (at < bestAt) {
         bestAt = at;
         bestA = a;
