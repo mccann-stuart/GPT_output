@@ -74,6 +74,20 @@ test('toManifestJson formats array into JSON string with newline', () => {
   assert.equal(result, expected);
 });
 
+test('toManifestJson throws TypeError for null', () => {
+  assert.throws(
+    () => toManifestJson(null),
+    TypeError
+  );
+});
+
+test('toManifestJson throws TypeError for undefined', () => {
+  assert.throws(
+    () => toManifestJson(undefined),
+    TypeError
+  );
+});
+
 test('toManifestJson handles empty array', () => {
   const files = [];
   const expected = '[]\n';
