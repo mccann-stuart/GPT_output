@@ -1136,30 +1136,38 @@ export async function initViewer(options = {}) {
       }
       const jsxCode = await response.text();
 
+      // Fix relative imports for blob URL
+      const fileUrl = new URL(sourceUrl, window.location.href).href;
+      const resolveRelativeImportsPlugin = () => {
+        return {
+          visitor: {
+            "ImportDeclaration|ExportNamedDeclaration|ExportAllDeclaration"(path) {
+              if (path.node.source && path.node.source.value.startsWith(".")) {
+                path.node.source.value = new URL(path.node.source.value, fileUrl).href;
+              }
+            },
+            CallExpression(path) {
+              if (path.node.callee.type === "Import") {
+                const arg = path.node.arguments[0];
+                if (arg && arg.type === "StringLiteral" && arg.value.startsWith(".")) {
+                  arg.value = new URL(arg.value, fileUrl).href;
+                }
+              }
+            }
+          }
+        };
+      };
+
       // Transpile using Babel
-      let transpiled = Babel.transform(jsxCode, {
+      const transpiled = Babel.transform(jsxCode, {
         presets: [
           ["react", { runtime: "automatic" }], // Use new JSX transform
         ],
+        plugins: [
+          resolveRelativeImportsPlugin
+        ],
         filename: filename,
       }).code;
-
-      // Fix relative imports for blob URL
-      const fileUrl = new URL(sourceUrl, window.location.href).href;
-      transpiled = transpiled.replace(
-        /(import|export|from)\s+['"](\.[^'"]+)['"]/g,
-        (match, p1, p2) => {
-          const absUrl = new URL(p2, fileUrl).href;
-          return `${p1} '${absUrl}'`;
-        },
-      );
-      transpiled = transpiled.replace(
-        /import\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-        (match, p1) => {
-          const absUrl = new URL(p1, fileUrl).href;
-          return `import('${absUrl}')`;
-        },
-      );
 
       // Create a module blob
       const blob = new Blob([transpiled], { type: "application/javascript" });
