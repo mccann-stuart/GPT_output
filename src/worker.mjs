@@ -61,10 +61,6 @@ function uploadObjectKey(file) {
   return `${R2_UPLOAD_PREFIX}${file}`;
 }
 
-function uploadPublicPath(file) {
-  return `${R2_ROUTE_PREFIX}${encodeURIComponent(file)}`;
-}
-
 function contentTypeForFile(file) {
   if (file.endsWith('.mjs')) return 'text/javascript; charset=utf-8';
   if (file.endsWith('.jsx')) return 'text/jsx; charset=utf-8';
