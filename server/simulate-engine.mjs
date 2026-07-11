@@ -449,6 +449,18 @@ function executeSimulationLoop(calls, allBrks, numAgents, shiftEnd, serviceTarge
   return { events, results, abandonedCalls };
 }
 
+function calculateBreakOverlap(breaks, start, end) {
+  let overlap = 0;
+  for (const brk of breaks) {
+    const overlapStart = Math.max(brk.s, start);
+    const overlapEnd = Math.min(brk.e, end);
+    if (overlapEnd > overlapStart) {
+      overlap += overlapEnd - overlapStart;
+    }
+  }
+  return overlap;
+}
+
 function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents, shiftStart, shiftLength, shiftEnd) {
   const resultsByAgent = Array.from({ length: numAgents }, () => []);
   for (const result of results) {
@@ -496,14 +508,7 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
     let busy = 0;
 
     for (let a = 0; a < numAgents; a++) {
-      let brkInInt = 0;
-      for (const brk of allBrks[a]) {
-        const overlapStart = Math.max(brk.s, is);
-        const overlapEnd = Math.min(brk.e, ie);
-        if (overlapEnd > overlapStart) {
-          brkInInt += overlapEnd - overlapStart;
-        }
-      }
+      const brkInInt = calculateBreakOverlap(allBrks[a], is, ie);
 
       avail += Math.min(intLen, shiftEnd - is) - brkInInt;
 
@@ -514,13 +519,7 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
           continue;
         }
         let callTime = overlapEnd - overlapStart;
-        for (const brk of allBrks[a]) {
-          const brkOverlapStart = Math.max(brk.s, overlapStart);
-          const brkOverlapEnd = Math.min(brk.e, overlapEnd);
-          if (brkOverlapEnd > brkOverlapStart) {
-            callTime -= brkOverlapEnd - brkOverlapStart;
-          }
-        }
+        callTime -= calculateBreakOverlap(allBrks[a], overlapStart, overlapEnd);
         busy += Math.max(0, callTime);
       }
     }
@@ -550,13 +549,7 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
     tAvail += shiftLength - Math.max(0, brkT);
     for (const result of resultsByAgent[a]) {
       let callTime = result.end - result.answer;
-      for (const brk of allBrks[a]) {
-        const overlapStart = Math.max(brk.s, result.answer);
-        const overlapEnd = Math.min(brk.e, result.end);
-        if (overlapEnd > overlapStart) {
-          callTime -= overlapEnd - overlapStart;
-        }
-      }
+      callTime -= calculateBreakOverlap(allBrks[a], result.answer, result.end);
       tBusy += Math.max(0, callTime);
     }
   }
