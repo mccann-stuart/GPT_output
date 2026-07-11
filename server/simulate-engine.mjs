@@ -462,6 +462,9 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
   let resultIdx = 0;
   let abandonIdx = 0;
 
+  const brkIdx = new Array(numAgents).fill(0);
+  const resIdx = new Array(numAgents).fill(0);
+
   for (let i = 0; i < numInts; i++) {
     const is = shiftStart + i * intLen;
     const ie = is + intLen;
@@ -475,11 +478,13 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
     }
 
     const abandonedInInt = [];
-    while (abandonIdx < abandonedCalls.length && abandonedCalls[abandonIdx].arrival < ie) {
-      if (abandonedCalls[abandonIdx].arrival >= is) {
-        abandonedInInt.push(abandonedCalls[abandonIdx]);
-      }
+    while (abandonIdx < abandonedCalls.length && abandonedCalls[abandonIdx].arrival < is) {
       abandonIdx++;
+    }
+    let tempAbandonIdx = abandonIdx;
+    while (tempAbandonIdx < abandonedCalls.length && abandonedCalls[tempAbandonIdx].arrival < ie) {
+      abandonedInInt.push(abandonedCalls[tempAbandonIdx]);
+      tempAbandonIdx++;
     }
     const totalOffered = arriving.length + abandonedInInt.length;
     const numAbandoned = abandonedInInt.length;
@@ -496,8 +501,16 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
     let busy = 0;
 
     for (let a = 0; a < numAgents; a++) {
+      let j = brkIdx[a];
+      while (j < allBrks[a].length && allBrks[a][j].e <= is) {
+        j++;
+      }
+      brkIdx[a] = j;
+
       let brkInInt = 0;
-      for (const brk of allBrks[a]) {
+      for (let k = j; k < allBrks[a].length; k++) {
+        const brk = allBrks[a][k];
+        if (brk.s >= ie) break;
         const overlapStart = Math.max(brk.s, is);
         const overlapEnd = Math.min(brk.e, ie);
         if (overlapEnd > overlapStart) {
@@ -507,14 +520,25 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
 
       avail += Math.min(intLen, shiftEnd - is) - brkInInt;
 
-      for (const result of resultsByAgent[a]) {
+      let rIdx = resIdx[a];
+      while (rIdx < resultsByAgent[a].length && resultsByAgent[a][rIdx].end <= is) {
+        rIdx++;
+      }
+      resIdx[a] = rIdx;
+
+      for (let k = rIdx; k < resultsByAgent[a].length; k++) {
+        const result = resultsByAgent[a][k];
+        if (result.answer >= ie) break;
+
         const overlapStart = Math.max(result.answer, is);
         const overlapEnd = Math.min(result.end, ie);
         if (overlapEnd <= overlapStart) {
           continue;
         }
         let callTime = overlapEnd - overlapStart;
-        for (const brk of allBrks[a]) {
+        for (let b = j; b < allBrks[a].length; b++) {
+          const brk = allBrks[a][b];
+          if (brk.s >= overlapEnd) break;
           const brkOverlapStart = Math.max(brk.s, overlapStart);
           const brkOverlapEnd = Math.min(brk.e, overlapEnd);
           if (brkOverlapEnd > brkOverlapStart) {
@@ -546,11 +570,25 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
   let tAvail = 0;
   let tBusy = 0;
   for (let a = 0; a < numAgents; a++) {
-    const brkT = allBrks[a].reduce((sum, brk) => sum + (Math.min(brk.e, shiftEnd) - brk.s), 0);
+    let brkT = 0;
+    for (let b = 0; b < allBrks[a].length; b++) {
+      brkT += Math.min(allBrks[a][b].e, shiftEnd) - allBrks[a][b].s;
+    }
     tAvail += shiftLength - Math.max(0, brkT);
-    for (const result of resultsByAgent[a]) {
+
+    let brkIdx2 = 0;
+    for (let r = 0; r < resultsByAgent[a].length; r++) {
+      const result = resultsByAgent[a][r];
       let callTime = result.end - result.answer;
-      for (const brk of allBrks[a]) {
+
+      while (brkIdx2 < allBrks[a].length && allBrks[a][brkIdx2].e <= result.answer) {
+        brkIdx2++;
+      }
+
+      for (let b = brkIdx2; b < allBrks[a].length; b++) {
+        const brk = allBrks[a][b];
+        if (brk.s >= result.end) break;
+
         const overlapStart = Math.max(brk.s, result.answer);
         const overlapEnd = Math.min(brk.e, result.end);
         if (overlapEnd > overlapStart) {
