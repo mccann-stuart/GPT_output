@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker from '../src/worker.mjs';
+import worker, { formatBoeDate } from '../src/worker.mjs';
 import { makeR2Bucket } from './r2-mock.mjs';
 
 const originalFetch = globalThis.fetch;
@@ -497,3 +497,8 @@ test('worker overwrites existing R2 files on upload without error', async () => 
   assert.equal(overwrittenObject.body, 'import { value } from "./example-logic.mjs";\nexport default function Example() { return value; }\n');
 });
 
+
+test('formatBoeDate properly formats dates', () => {
+  assert.equal(formatBoeDate(new Date(2023, 0, 5)), '05/Jan/2023');
+  assert.equal(formatBoeDate(new Date(2023, 11, 31)), '31/Dec/2023');
+});
