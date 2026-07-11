@@ -5,7 +5,7 @@ const MAX_JSON_BODY_BYTES = 4096;
 const MAX_UPLOAD_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_UPLOAD_FILE_BYTES = 512 * 1024;
 const SAFE_DELIVERABLE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(jsx|mjs)$/;
-const LOCAL_IMPORT_PATTERN = /\b(?:import(?:\s+[^'"]*?from|\s*)?|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
+export const LOCAL_IMPORT_PATTERN = /\b(?:import(?:\s+[^'"]*?from|\s*)?|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
 const R2_UPLOAD_PREFIX = 'jsxupload/Files/';
 const R2_ROUTE_PREFIX = '/jsxupload/Files/';
 const BOE_IADB_CSV_ENDPOINT = 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp';
@@ -75,7 +75,7 @@ function openUrlForUploadedJsx(file, version) {
   return `/?file=${encodeURIComponent(file)}&source=r2&version=${encodeURIComponent(version)}`;
 }
 
-function normalizeLocalImport(specifier) {
+export function normalizeLocalImport(specifier) {
   if (!specifier.startsWith('./')) return null;
   const withoutPrefix = specifier.slice(2);
   if (!withoutPrefix || withoutPrefix.includes('/') || withoutPrefix.includes('\\') || withoutPrefix.startsWith('.')) {
@@ -90,7 +90,7 @@ function normalizeLocalImport(specifier) {
   return withoutPrefix;
 }
 
-function findRequiredMjsImports(jsxText) {
+export function findRequiredMjsImports(jsxText) {
   const required = new Set();
   for (const match of jsxText.matchAll(LOCAL_IMPORT_PATTERN)) {
     const normalized = normalizeLocalImport(match[1]);

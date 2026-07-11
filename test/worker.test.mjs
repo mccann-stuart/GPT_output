@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker from '../src/worker.mjs';
+import worker, { findRequiredMjsImports } from '../src/worker.mjs';
 import { makeR2Bucket } from './r2-mock.mjs';
 
 const originalFetch = globalThis.fetch;
@@ -497,3 +497,37 @@ test('worker overwrites existing R2 files on upload without error', async () => 
   assert.equal(overwrittenObject.body, 'import { value } from "./example-logic.mjs";\nexport default function Example() { return value; }\n');
 });
 
+
+test('findRequiredMjsImports extracts valid local .mjs imports', () => {
+  const jsxText = `
+    import { something } from "./module1.mjs";
+    import "./module2.mjs";
+    export { other } from "./module3.mjs";
+    import * as all from "./module4.mjs";
+    import def from "./module1.mjs";
+  `;
+  const imports = findRequiredMjsImports(jsxText);
+  assert.equal(imports.size, 4);
+  assert.ok(imports.has('module1.mjs'));
+  assert.ok(imports.has('module2.mjs'));
+  assert.ok(imports.has('module3.mjs'));
+  assert.ok(imports.has('module4.mjs'));
+});
+
+test('findRequiredMjsImports ignores external imports and throws on invalid local imports', () => {
+  const externalJsx = `
+    import React from "react";
+    import { Button } from "shadcn/ui";
+    import { evaluate } from "mathjs";
+  `;
+  const imports = findRequiredMjsImports(externalJsx);
+  assert.equal(imports.size, 0);
+
+  assert.throws(() => {
+    findRequiredMjsImports(`import { foo } from "./../parent.mjs";`);
+  }, /Uploaded JSX imports must be flat local files/);
+
+  assert.throws(() => {
+    findRequiredMjsImports(`import { baz } from "./module.js";`);
+  }, /Uploaded JSX may only import flat local .mjs files/);
+});
