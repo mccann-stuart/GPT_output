@@ -945,7 +945,10 @@ export async function initViewer(options = {}) {
   }
 
   async function fetchManifest() {
-    const res = await fetch("jsx-manifest.json");
+    const [res, uploadedFiles] = await Promise.all([
+      fetch("jsx-manifest.json"),
+      fetchUploadedManifest()
+    ]);
     if (!res.ok) throw new Error("Failed to load jsx-manifest.json");
     const manifest = await res.json();
     if (!Array.isArray(manifest)) {
@@ -955,7 +958,6 @@ export async function initViewer(options = {}) {
     const staticFiles = manifest.filter(isAllowedManifestFile);
     staticFiles.forEach((file) => FILE_SOURCES.set(file, "static"));
 
-    const uploadedFiles = await fetchUploadedManifest();
     uploadedFiles.forEach((file) => FILE_SOURCES.set(file, "r2"));
 
     ALLOWED_FILES = [...FILE_SOURCES.keys()];
