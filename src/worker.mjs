@@ -45,7 +45,7 @@ function errorResponse(status, message) {
   return json({ error: message }, { status });
 }
 
-function isSafeDeliverableFile(value) {
+export function isSafeDeliverableFile(value) {
   return typeof value === 'string' && SAFE_DELIVERABLE_FILE.test(value);
 }
 
