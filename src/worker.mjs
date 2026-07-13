@@ -74,7 +74,7 @@ function openUrlForUploadedJsx(file, version) {
   return `/?file=${encodeURIComponent(file)}&source=r2&version=${encodeURIComponent(version)}`;
 }
 
-function normalizeLocalImport(specifier) {
+export function normalizeLocalImport(specifier) {
   if (!specifier.startsWith('./')) return null;
   const withoutPrefix = specifier.slice(2);
   if (!withoutPrefix || withoutPrefix.includes('/') || withoutPrefix.includes('\\') || withoutPrefix.startsWith('.')) {
@@ -89,7 +89,7 @@ function normalizeLocalImport(specifier) {
   return withoutPrefix;
 }
 
-function findRequiredMjsImports(jsxText) {
+export function findRequiredMjsImports(jsxText) {
   const required = new Set();
   let specifiers;
   try {
