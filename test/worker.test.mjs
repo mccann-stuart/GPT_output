@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker, { buildBoeCsvUrl, findRequiredMjsImports, parseBoECsv } from '../src/worker.mjs';
+import worker, { buildBoeCsvUrl, findRequiredMjsImports, formatBoeDate, parseBoECsv } from '../src/worker.mjs';
 import { makeR2Bucket } from './r2-mock.mjs';
 
 const originalFetch = globalThis.fetch;
@@ -530,6 +530,11 @@ test('findRequiredMjsImports ignores external imports and throws on invalid loca
   assert.throws(() => {
     findRequiredMjsImports(`import { baz } from "./module.js";`);
   }, /Uploaded JSX may only import flat local .mjs files/);
+});
+
+test('formatBoeDate properly formats dates', () => {
+  assert.equal(formatBoeDate(new Date(2023, 0, 5)), '05/Jan/2023');
+  assert.equal(formatBoeDate(new Date(2023, 11, 31)), '31/Dec/2023');
 });
 
 test('buildBoeCsvUrl generates correct URL for a given date', () => {

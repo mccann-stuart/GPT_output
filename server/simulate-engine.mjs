@@ -449,6 +449,20 @@ function executeSimulationLoop(calls, allBrks, numAgents, shiftEnd, serviceTarge
   return { events, results, abandonedCalls };
 }
 
+function calculateBreakOverlap(breaks, start, end, startIndex = 0) {
+  let overlap = 0;
+  for (let index = startIndex; index < breaks.length; index++) {
+    const brk = breaks[index];
+    if (brk.s >= end) break;
+    const overlapStart = Math.max(brk.s, start);
+    const overlapEnd = Math.min(brk.e, end);
+    if (overlapEnd > overlapStart) {
+      overlap += overlapEnd - overlapStart;
+    }
+  }
+  return overlap;
+}
+
 function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents, shiftStart, shiftLength, shiftEnd) {
   const resultsByAgent = Array.from({ length: numAgents }, () => []);
   for (const result of results) {
@@ -461,7 +475,6 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
 
   let resultIdx = 0;
   let abandonIdx = 0;
-
   const brkIdx = new Array(numAgents).fill(0);
   const resIdx = new Array(numAgents).fill(0);
 
@@ -501,22 +514,13 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
     let busy = 0;
 
     for (let a = 0; a < numAgents; a++) {
+      const brks = allBrks[a];
       let j = brkIdx[a];
-      while (j < allBrks[a].length && allBrks[a][j].e <= is) {
+      while (j < brks.length && brks[j].e <= is) {
         j++;
       }
       brkIdx[a] = j;
-
-      let brkInInt = 0;
-      for (let k = j; k < allBrks[a].length; k++) {
-        const brk = allBrks[a][k];
-        if (brk.s >= ie) break;
-        const overlapStart = Math.max(brk.s, is);
-        const overlapEnd = Math.min(brk.e, ie);
-        if (overlapEnd > overlapStart) {
-          brkInInt += overlapEnd - overlapStart;
-        }
-      }
+      const brkInInt = calculateBreakOverlap(brks, is, ie, j);
 
       avail += Math.min(intLen, shiftEnd - is) - brkInInt;
 
@@ -540,15 +544,7 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
         while (resultBreakIdx < allBrks[a].length && allBrks[a][resultBreakIdx].e <= overlapStart) {
           resultBreakIdx++;
         }
-        for (let b = resultBreakIdx; b < allBrks[a].length; b++) {
-          const brk = allBrks[a][b];
-          if (brk.s >= overlapEnd) break;
-          const brkOverlapStart = Math.max(brk.s, overlapStart);
-          const brkOverlapEnd = Math.min(brk.e, overlapEnd);
-          if (brkOverlapEnd > brkOverlapStart) {
-            callTime -= brkOverlapEnd - brkOverlapStart;
-          }
-        }
+        callTime -= calculateBreakOverlap(brks, overlapStart, overlapEnd, resultBreakIdx);
         busy += Math.max(0, callTime);
       }
     }
@@ -587,16 +583,7 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
       while (brkIdx2 < allBrks[a].length && allBrks[a][brkIdx2].e <= result.answer) {
         brkIdx2++;
       }
-
-      for (let b = brkIdx2; b < allBrks[a].length; b++) {
-        const brk = allBrks[a][b];
-        if (brk.s >= result.end) break;
-        const overlapStart = Math.max(brk.s, result.answer);
-        const overlapEnd = Math.min(brk.e, result.end);
-        if (overlapEnd > overlapStart) {
-          callTime -= overlapEnd - overlapStart;
-        }
-      }
+      callTime -= calculateBreakOverlap(allBrks[a], result.answer, result.end, brkIdx2);
       tBusy += Math.max(0, callTime);
     }
   }
