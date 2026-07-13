@@ -6,6 +6,54 @@ const DEFAULT_BROWSER_TITLE = "JSX Viewer";
 const FAVICON_LINK_ID = "viewer-dynamic-favicon";
 const SHARE_PARAM = "state";
 const MAX_SHARED_STATE_LENGTH = 12000;
+// WebKit limits History API writes to 100 per 10 seconds. Coalesce rapid
+// component updates while leaving headroom for explicit user navigation.
+export const HISTORY_REPLACE_MIN_INTERVAL_MS = 125;
+
+export function createHistoryReplaceScheduler(
+  historyLike,
+  {
+    now = () => Date.now(),
+    setTimer = (callback, delay) => setTimeout(callback, delay),
+    clearTimer = (timerId) => clearTimeout(timerId),
+  } = {},
+) {
+  let lastWriteAt = Number.NEGATIVE_INFINITY;
+  let pendingUrl = null;
+  let timerId = null;
+
+  function flush() {
+    timerId = null;
+    if (pendingUrl === null) return;
+
+    const url = pendingUrl;
+    pendingUrl = null;
+    historyLike.replaceState({}, "", url);
+    lastWriteAt = now();
+  }
+
+  function schedule(url) {
+    pendingUrl = url;
+    const delay = Math.max(
+      0,
+      HISTORY_REPLACE_MIN_INTERVAL_MS - (now() - lastWriteAt),
+    );
+
+    if (delay === 0) {
+      flush();
+    } else if (timerId === null) {
+      timerId = setTimer(flush, delay);
+    }
+  }
+
+  function cancel() {
+    if (timerId !== null) clearTimer(timerId);
+    timerId = null;
+    pendingUrl = null;
+  }
+
+  return { schedule, cancel };
+}
 
 function stemForFilename(filename) {
   if (typeof filename !== "string") return "";
@@ -516,6 +564,134 @@ export function addDeviceMotionPermissionTapHandler({
   return cleanup;
 }
 
+function addShakeToOpenControls(openFn) {
+  let lastX = null, lastY = null, lastZ = null;
+  let lastUpdate = 0;
+  const SHAKE_THRESHOLD = 15; // total change in acceleration in m/s^2 over 100ms
+  const SHAKE_TIMEOUT = 1000;
+  let shakeCount = 0;
+  let lastShakeTime = 0;
+
+  const onDeviceMotion = (event) => {
+    const current = Date.now();
+    if (current - lastUpdate < 100) return;
+
+    const acc = event.acceleration || event.accelerationIncludingGravity;
+    if (!acc) return;
+
+    const x = acc.x;
+    const y = acc.y;
+    const z = acc.z;
+
+    if (x === null || y === null || z === null) return;
+
+    if (lastX !== null) {
+      const deltaX = Math.abs(x - lastX);
+      const deltaY = Math.abs(y - lastY);
+      const deltaZ = Math.abs(z - lastZ);
+      const change = deltaX + deltaY + deltaZ;
+
+      if (change > SHAKE_THRESHOLD) {
+        const timeDiff = current - lastShakeTime;
+        if (timeDiff > 200 && timeDiff < SHAKE_TIMEOUT) {
+          shakeCount++;
+          if (shakeCount >= 2) {
+            openFn();
+            shakeCount = 0;
+          }
+        } else if (timeDiff >= SHAKE_TIMEOUT || lastShakeTime === 0) {
+          shakeCount = 1;
+        }
+        lastShakeTime = current;
+      }
+    }
+
+    lastX = x;
+    lastY = y;
+    lastZ = z;
+    lastUpdate = current;
+  };
+
+  const startListening = () => {
+    window.addEventListener("devicemotion", onDeviceMotion, true);
+  };
+
+  addDeviceMotionPermissionTapHandler({ startListening });
+}
+
+function setupMobilePanelToggles({
+  panelToggleBtn,
+  minimizeBtn,
+  onOpenControls,
+  onCloseControls,
+}) {
+  const topNav = document.getElementById("top-nav");
+  const bottomTab = document.getElementById("bottom-tab");
+  const scrollContainer = document.getElementById("scroll-container");
+  const openControls = () => {
+    if (topNav && bottomTab && scrollContainer) {
+      const wasHidden = topNav.classList.contains("hidden");
+      topNav.classList.remove("hidden");
+      bottomTab.classList.remove("hidden");
+      scrollContainer.classList.remove("expanded");
+      panelToggleBtn?.classList.add("hidden");
+      if (wasHidden) {
+        onOpenControls?.();
+      }
+    }
+  };
+
+  if (topNav && bottomTab && scrollContainer) {
+    panelToggleBtn?.addEventListener("click", openControls);
+    addOpenControlsShortcut(openControls);
+    addShakeToOpenControls(openControls);
+  }
+
+  if (minimizeBtn && topNav && bottomTab && scrollContainer) {
+    minimizeBtn.addEventListener("click", () => {
+      const wasVisible = !topNav.classList.contains("hidden");
+      topNav.classList.add("hidden");
+      bottomTab.classList.add("hidden");
+      scrollContainer.classList.add("expanded");
+      // Keep panelToggleBtn hidden (do not remove "hidden" class)
+      if (wasVisible) {
+        onCloseControls?.();
+      }
+    });
+  }
+}
+
+function setupDesktopPanelToggles({
+  minimizeBtn,
+  onOpenControls,
+  onCloseControls,
+}) {
+  const topBar = document.getElementById("top-bar");
+  const openControls = () => {
+    if (topBar) {
+      const wasHidden = topBar.classList.contains("hidden");
+      topBar.classList.remove("hidden");
+      if (wasHidden) {
+        onOpenControls?.();
+      }
+    }
+  };
+
+  if (topBar) {
+    addOpenControlsShortcut(openControls);
+  }
+
+  if (minimizeBtn && topBar) {
+    minimizeBtn.addEventListener("click", () => {
+      const wasVisible = !topBar.classList.contains("hidden");
+      topBar.classList.add("hidden");
+      if (wasVisible) {
+        onCloseControls?.();
+      }
+    });
+  }
+}
+
 function setupPanelToggles({
   panelToggleBtn,
   minimizeBtn,
@@ -524,120 +700,18 @@ function setupPanelToggles({
   onCloseControls,
 }) {
   if (!isMobile) {
-    const topBar = document.getElementById("top-bar");
-    const openControls = () => {
-      if (topBar) {
-        const wasHidden = topBar.classList.contains("hidden");
-        topBar.classList.remove("hidden");
-        if (wasHidden) {
-          onOpenControls?.();
-        }
-      }
-    };
-
-    if (topBar) {
-      addOpenControlsShortcut(openControls);
-    }
-
-    if (minimizeBtn && topBar) {
-      minimizeBtn.addEventListener("click", () => {
-        const wasVisible = !topBar.classList.contains("hidden");
-        topBar.classList.add("hidden");
-        if (wasVisible) {
-          onCloseControls?.();
-        }
-      });
-    }
+    setupDesktopPanelToggles({
+      minimizeBtn,
+      onOpenControls,
+      onCloseControls,
+    });
   } else {
-    const topNav = document.getElementById("top-nav");
-    const bottomTab = document.getElementById("bottom-tab");
-    const scrollContainer = document.getElementById("scroll-container");
-    const openControls = () => {
-      if (topNav && bottomTab && scrollContainer) {
-        const wasHidden = topNav.classList.contains("hidden");
-        topNav.classList.remove("hidden");
-        bottomTab.classList.remove("hidden");
-        scrollContainer.classList.remove("expanded");
-        panelToggleBtn?.classList.add("hidden");
-        if (wasHidden) {
-          onOpenControls?.();
-        }
-      }
-    };
-
-    const addShakeToOpenControls = (openFn) => {
-      let lastX = null, lastY = null, lastZ = null;
-      let lastUpdate = 0;
-      const SHAKE_THRESHOLD = 15; // total change in acceleration in m/s^2 over 100ms
-      const SHAKE_TIMEOUT = 1000;
-      let shakeCount = 0;
-      let lastShakeTime = 0;
-
-      const onDeviceMotion = (event) => {
-        const current = Date.now();
-        if (current - lastUpdate < 100) return;
-
-        const acc = event.acceleration || event.accelerationIncludingGravity;
-        if (!acc) return;
-
-        const x = acc.x;
-        const y = acc.y;
-        const z = acc.z;
-
-        if (x === null || y === null || z === null) return;
-
-        if (lastX !== null) {
-          const deltaX = Math.abs(x - lastX);
-          const deltaY = Math.abs(y - lastY);
-          const deltaZ = Math.abs(z - lastZ);
-          const change = deltaX + deltaY + deltaZ;
-
-          if (change > SHAKE_THRESHOLD) {
-            const timeDiff = current - lastShakeTime;
-            if (timeDiff > 200 && timeDiff < SHAKE_TIMEOUT) {
-              shakeCount++;
-              if (shakeCount >= 2) {
-                openFn();
-                shakeCount = 0;
-              }
-            } else if (timeDiff >= SHAKE_TIMEOUT || lastShakeTime === 0) {
-              shakeCount = 1;
-            }
-            lastShakeTime = current;
-          }
-        }
-
-        lastX = x;
-        lastY = y;
-        lastZ = z;
-        lastUpdate = current;
-      };
-
-      const startListening = () => {
-        window.addEventListener("devicemotion", onDeviceMotion, true);
-      };
-
-      addDeviceMotionPermissionTapHandler({ startListening });
-    };
-
-    if (topNav && bottomTab && scrollContainer) {
-      panelToggleBtn?.addEventListener("click", openControls);
-      addOpenControlsShortcut(openControls);
-      addShakeToOpenControls(openControls);
-    }
-
-    if (minimizeBtn && topNav && bottomTab && scrollContainer) {
-      minimizeBtn.addEventListener("click", () => {
-        const wasVisible = !topNav.classList.contains("hidden");
-        topNav.classList.add("hidden");
-        bottomTab.classList.add("hidden");
-        scrollContainer.classList.add("expanded");
-        // Keep panelToggleBtn hidden (do not remove "hidden" class)
-        if (wasVisible) {
-          onCloseControls?.();
-        }
-      });
-    }
+    setupMobilePanelToggles({
+      panelToggleBtn,
+      minimizeBtn,
+      onOpenControls,
+      onCloseControls,
+    });
   }
 }
 
@@ -854,6 +928,7 @@ export async function initViewer(options = {}) {
   let currentSettings = {};
   let currentMountKey = "";
   let renderVersion = 0;
+  const historyReplaceScheduler = createHistoryReplaceScheduler(window.history);
 
   // Helper functions
 
@@ -945,7 +1020,10 @@ export async function initViewer(options = {}) {
   }
 
   async function fetchManifest() {
-    const res = await fetch("jsx-manifest.json");
+    const [res, uploadedFiles] = await Promise.all([
+      fetch("jsx-manifest.json"),
+      fetchUploadedManifest()
+    ]);
     if (!res.ok) throw new Error("Failed to load jsx-manifest.json");
     const manifest = await res.json();
     if (!Array.isArray(manifest)) {
@@ -955,7 +1033,6 @@ export async function initViewer(options = {}) {
     const staticFiles = manifest.filter(isAllowedManifestFile);
     staticFiles.forEach((file) => FILE_SOURCES.set(file, "static"));
 
-    const uploadedFiles = await fetchUploadedManifest();
     uploadedFiles.forEach((file) => FILE_SOURCES.set(file, "r2"));
 
     ALLOWED_FILES = [...FILE_SOURCES.keys()];
@@ -1055,9 +1132,10 @@ export async function initViewer(options = {}) {
       shareUrlEl.value = url.toString();
     }
     if (pushHistory) {
+      historyReplaceScheduler.cancel();
       window.history.pushState({}, "", url);
     } else {
-      window.history.replaceState({}, "", url);
+      historyReplaceScheduler.schedule(url);
     }
   }
 
@@ -1257,6 +1335,7 @@ export async function initViewer(options = {}) {
   });
 
   window.addEventListener("popstate", () => {
+    historyReplaceScheduler.cancel();
     const { initialFile, initialOverrides } = getStateFromUrl(
       window.location.href,
     );

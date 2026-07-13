@@ -507,6 +507,8 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
 
       avail += Math.min(intLen, shiftEnd - is) - brkInInt;
 
+      let brkIdx = 0;
+      const brks = allBrks[a];
       for (const result of resultsByAgent[a]) {
         const overlapStart = Math.max(result.answer, is);
         const overlapEnd = Math.min(result.end, ie);
@@ -514,7 +516,13 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
           continue;
         }
         let callTime = overlapEnd - overlapStart;
-        for (const brk of allBrks[a]) {
+
+        while (brkIdx < brks.length && brks[brkIdx].e <= overlapStart) {
+          brkIdx++;
+        }
+        for (let j = brkIdx; j < brks.length; j++) {
+          const brk = brks[j];
+          if (brk.s >= overlapEnd) break;
           const brkOverlapStart = Math.max(brk.s, overlapStart);
           const brkOverlapEnd = Math.min(brk.e, overlapEnd);
           if (brkOverlapEnd > brkOverlapStart) {
@@ -548,9 +556,17 @@ function aggregateSimulationResults(results, abandonedCalls, allBrks, numAgents,
   for (let a = 0; a < numAgents; a++) {
     const brkT = allBrks[a].reduce((sum, brk) => sum + (Math.min(brk.e, shiftEnd) - brk.s), 0);
     tAvail += shiftLength - Math.max(0, brkT);
+    let brkIdx = 0;
+    const brks = allBrks[a];
     for (const result of resultsByAgent[a]) {
       let callTime = result.end - result.answer;
-      for (const brk of allBrks[a]) {
+
+      while (brkIdx < brks.length && brks[brkIdx].e <= result.answer) {
+        brkIdx++;
+      }
+      for (let j = brkIdx; j < brks.length; j++) {
+        const brk = brks[j];
+        if (brk.s >= result.end) break;
         const overlapStart = Math.max(brk.s, result.answer);
         const overlapEnd = Math.min(brk.e, result.end);
         if (overlapEnd > overlapStart) {

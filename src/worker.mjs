@@ -1,11 +1,10 @@
 import { buildSimulationViewModel, computePreview } from '../server/simulate-engine.mjs';
-import { assertSupportedJsxImports } from '../jsx-import-validator.mjs';
+import { assertSupportedJsxImports, findJsxImportSpecifiers } from '../jsx-import-validator.mjs';
 
 const MAX_JSON_BODY_BYTES = 4096;
 const MAX_UPLOAD_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_UPLOAD_FILE_BYTES = 512 * 1024;
 const SAFE_DELIVERABLE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(jsx|mjs)$/;
-export const LOCAL_IMPORT_PATTERN = /\b(?:import(?:\s+[^'"]*?from|\s*)?|export\s+[^'"]*?from|import\s*\()\s*['"](\.[^'"]+)['"]/g;
 const R2_UPLOAD_PREFIX = 'jsxupload/Files/';
 const R2_ROUTE_PREFIX = '/jsxupload/Files/';
 const BOE_IADB_CSV_ENDPOINT = 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp';
@@ -92,9 +91,18 @@ export function normalizeLocalImport(specifier) {
 
 export function findRequiredMjsImports(jsxText) {
   const required = new Set();
-  for (const match of jsxText.matchAll(LOCAL_IMPORT_PATTERN)) {
-    const normalized = normalizeLocalImport(match[1]);
-    if (normalized) required.add(normalized);
+  let specifiers;
+  try {
+    specifiers = findJsxImportSpecifiers(jsxText);
+  } catch (error) {
+    throw new ApiRequestError(400, error.message);
+  }
+
+  for (const specifier of specifiers) {
+    if (specifier.startsWith('.')) {
+      const normalized = normalizeLocalImport(specifier);
+      if (normalized) required.add(normalized);
+    }
   }
   return required;
 }
@@ -158,7 +166,7 @@ async function readUploadFiles(request) {
     throw new ApiRequestError(400, error instanceof Error ? error.message : 'Uploaded JSX contains unsupported imports');
   }
 
-  const uploadedNames = new Set(uploads.map((file) => file.name));
+  const uploadedNames = seen;
   const requiredImports = findRequiredMjsImports(jsxFile.text);
   for (const importedFile of requiredImports) {
     if (!uploadedNames.has(importedFile)) {
@@ -485,3 +493,5 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
+
+export { parseBoECsv };

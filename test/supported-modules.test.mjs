@@ -103,3 +103,14 @@ test('JSX import validator rejects unsupported bare imports with a clear message
     /bad\.jsx uses unsupported bare imports: @scope\/other, unsupported-package.*Supported modules:.*shadcn\/ui/s,
   );
 });
+
+test('JSX import validator rejects malformed JSX', () => {
+  assert.throws(
+    () => assertSupportedJsxImports(`
+      import thing from 'unsupported-package';
+      export { other } from '@scope/other';
+      import(
+    `, { file: 'bad.jsx' }),
+    /Failed to parse JSX:/,
+  );
+});
