@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker, { findRequiredMjsImports, parseBoECsv } from '../src/worker.mjs';
+import worker, { buildBoeCsvUrl, findRequiredMjsImports, parseBoECsv } from '../src/worker.mjs';
 import { makeR2Bucket } from './r2-mock.mjs';
 
 const originalFetch = globalThis.fetch;
@@ -530,6 +530,14 @@ test('findRequiredMjsImports ignores external imports and throws on invalid loca
   assert.throws(() => {
     findRequiredMjsImports(`import { baz } from "./module.js";`);
   }, /Uploaded JSX may only import flat local .mjs files/);
+});
+
+test('buildBoeCsvUrl generates correct URL for a given date', () => {
+  const url = buildBoeCsvUrl(new Date('2023-11-15T12:00:00Z'));
+  assert.equal(url, 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp?csv.x=yes&Datefrom=16%2FOct%2F2023&Dateto=15%2FNov%2F2023&SeriesCodes=IUDBEDR%2CIUDSOIA&CSVF=TN&UsingCodes=Y');
+
+  const url2 = buildBoeCsvUrl(new Date('2024-03-15T12:00:00Z'));
+  assert.equal(url2, 'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp?csv.x=yes&Datefrom=14%2FFeb%2F2024&Dateto=15%2FMar%2F2024&SeriesCodes=IUDBEDR%2CIUDSOIA&CSVF=TN&UsingCodes=Y');
 });
 
 test('parseBoECsv correctly parses standard BoE CSV', () => {
