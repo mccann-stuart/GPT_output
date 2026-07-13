@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   GA_MEASUREMENT_ID,
+  HISTORY_REPLACE_MIN_INTERVAL_MS,
   analyticsParamsForViewer,
   browserTitleForFile,
   faviconColorForFile,
@@ -20,6 +21,7 @@ import {
   isSafeUploadFileName,
   sanitizedAnalyticsUrlParts,
   viewerTypeForMobile,
+  createHistoryReplaceScheduler,
   addDeviceMotionPermissionTapHandler,
 } from "../public/viewer-shared.mjs";
 
@@ -30,6 +32,68 @@ test("viewer analytics helpers expose the configured measurement id", () => {
 test("viewerTypeForMobile maps viewer shells to analytics view types", () => {
   assert.equal(viewerTypeForMobile(true), "iphone");
   assert.equal(viewerTypeForMobile(false), "desktop");
+});
+
+test("history replacement accepts 10,000 updates in 10 seconds without exceeding the browser quota", () => {
+  let currentTime = 0;
+  let nextTimerId = 0;
+  let scheduledTimer = null;
+  const writes = [];
+  const historyLike = {
+    replaceState(_state, _unused, url) {
+      writes.push({ at: currentTime, url });
+    },
+  };
+  const scheduler = createHistoryReplaceScheduler(historyLike, {
+    now: () => currentTime,
+    setTimer(callback, delay) {
+      const timer = {
+        id: ++nextTimerId,
+        callback,
+        dueAt: currentTime + delay,
+      };
+      scheduledTimer = timer;
+      return timer.id;
+    },
+    clearTimer(timerId) {
+      if (scheduledTimer?.id === timerId) scheduledTimer = null;
+    },
+  });
+
+  function advanceTo(targetTime) {
+    while (scheduledTimer && scheduledTimer.dueAt <= targetTime) {
+      const timer = scheduledTimer;
+      scheduledTimer = null;
+      currentTime = timer.dueAt;
+      timer.callback();
+    }
+    currentTime = targetTime;
+  }
+
+  for (let update = 0; update < 10_000; update += 1) {
+    advanceTo(update);
+    scheduler.schedule(`https://example.test/?state=${update}`);
+  }
+  advanceTo(10_000);
+
+  assert.equal(HISTORY_REPLACE_MIN_INTERVAL_MS, 125);
+  assert.ok(
+    writes.length < 100,
+    `expected fewer than 100 writes, got ${writes.length}`,
+  );
+  assert.equal(writes.at(-1).url, "https://example.test/?state=9999");
+  const completedWriteCount = writes.length;
+  advanceTo(10_001);
+  scheduler.schedule("https://example.test/?state=stale");
+  scheduler.cancel();
+  advanceTo(10_125);
+  assert.equal(writes.length, completedWriteCount);
+  writes.forEach((write, index) => {
+    const writesInPreviousTenSeconds = writes
+      .slice(0, index + 1)
+      .filter((candidate) => candidate.at >= write.at - 10_000);
+    assert.ok(writesInPreviousTenSeconds.length < 100);
+  });
 });
 
 test("device motion permission is requested from a click activation", async () => {
