@@ -319,7 +319,7 @@ export function formatBoeDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${BOE_MONTHS[date.getMonth()]}/${date.getFullYear()}`;
 }
 
-function buildBoeCsvUrl(today = new Date()) {
+export function buildBoeCsvUrl(today = new Date()) {
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(today.getDate() - 30);
 
