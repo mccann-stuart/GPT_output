@@ -257,20 +257,22 @@ function vendorBannerFor(module) {
 
 async function vendorBrowserModules() {
   try {
-    for (const module of SUPPORTED_BROWSER_MODULES) {
-      await build({
-        entryPoints: [vendorEntryPointFor(module)],
-        outfile: join(vendorDir, module.vendorFile),
-        bundle: true,
-        format: 'esm',
-        platform: 'browser',
-        target: 'es2020',
-        absWorkingDir: root,
-        external: module.bundleExternal,
-        banner: vendorBannerFor(module),
-        logLevel: 'silent',
-      });
-    }
+    await Promise.all(
+      SUPPORTED_BROWSER_MODULES.map((module) =>
+        build({
+          entryPoints: [vendorEntryPointFor(module)],
+          outfile: join(vendorDir, module.vendorFile),
+          bundle: true,
+          format: 'esm',
+          platform: 'browser',
+          target: 'es2020',
+          absWorkingDir: root,
+          external: module.bundleExternal,
+          banner: vendorBannerFor(module),
+          logLevel: 'silent',
+        })
+      )
+    );
   } finally {
     rmSync(vendorEntryDir, { recursive: true, force: true });
   }
@@ -286,6 +288,12 @@ writeFileSync(join(publicDir, 'jsx-manifest.json'), manifestJson);
 
 const seen = new Set();
 const queue = [...rootFiles];
+
+const localImportPatterns = [
+  /\bimport\s+[^'"]*?from\s+['"](\.[^'"]+)['"]/g,
+  /\bexport\s+[^'"]*?from\s+['"](\.[^'"]+)['"]/g,
+  /\bimport\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
+];
 
 function enqueueLocalImports(relativeFile) {
   const absFile = join(root, relativeFile);
@@ -303,13 +311,7 @@ function enqueueLocalImports(relativeFile) {
   mkdirSync(dirname(destination), { recursive: true });
   copyFileSync(absFile, destination);
 
-  const patterns = [
-    /\bimport\s+[^'"]*?from\s+['"](\.[^'"]+)['"]/g,
-    /\bexport\s+[^'"]*?from\s+['"](\.[^'"]+)['"]/g,
-    /\bimport\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-  ];
-
-  for (const pattern of patterns) {
+  for (const pattern of localImportPatterns) {
     for (const match of source.matchAll(pattern)) {
       const specifier = match[1];
       const resolved = resolve(dirname(absFile), specifier);

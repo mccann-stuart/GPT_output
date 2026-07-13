@@ -503,6 +503,67 @@ function addOpenControlsShortcut(openControls) {
   );
 }
 
+export function addDeviceMotionPermissionTapHandler({
+  target = typeof window !== "undefined" ? window : undefined,
+  motionEvent =
+    typeof DeviceMotionEvent !== "undefined" ? DeviceMotionEvent : undefined,
+  startListening,
+  onError = (err) => {
+    console.error("Error requesting DeviceMotion permission:", err);
+  },
+} = {}) {
+  if (typeof startListening !== "function") return () => {};
+
+  if (
+    !motionEvent ||
+    typeof motionEvent.requestPermission !== "function"
+  ) {
+    startListening();
+    return () => {};
+  }
+
+  if (!target || typeof target.addEventListener !== "function") {
+    return () => {};
+  }
+
+  let hasRequested = false;
+  const requestPermission = () => {
+    if (hasRequested) return;
+    hasRequested = true;
+
+    let permissionRequest;
+    try {
+      permissionRequest = motionEvent.requestPermission();
+    } catch (err) {
+      cleanup();
+      onError(err);
+      return;
+    }
+
+    Promise.resolve(permissionRequest)
+      .then((state) => {
+        if (state === "granted") {
+          startListening();
+        }
+      })
+      .catch((err) => {
+        onError(err);
+      })
+      .finally(cleanup);
+  };
+
+  const cleanup = () => {
+    target.removeEventListener?.("click", requestPermission, true);
+  };
+
+  target.addEventListener("click", requestPermission, {
+    capture: true,
+    once: true,
+  });
+
+  return cleanup;
+}
+
 function setupPanelToggles({
   panelToggleBtn,
   minimizeBtn,
@@ -604,29 +665,7 @@ function setupPanelToggles({
         window.addEventListener("devicemotion", onDeviceMotion, true);
       };
 
-      if (
-        typeof DeviceMotionEvent !== "undefined" &&
-        typeof DeviceMotionEvent.requestPermission === "function"
-      ) {
-        const requestPermission = () => {
-          DeviceMotionEvent.requestPermission()
-            .then((state) => {
-              if (state === "granted") {
-                startListening();
-              }
-            })
-            .catch((err) => {
-              console.error("Error requesting DeviceMotion permission:", err);
-            });
-          window.removeEventListener("click", requestPermission);
-          window.removeEventListener("touchstart", requestPermission);
-        };
-
-        window.addEventListener("click", requestPermission);
-        window.addEventListener("touchstart", requestPermission);
-      } else {
-        startListening();
-      }
+      addDeviceMotionPermissionTapHandler({ startListening });
     };
 
     if (topNav && bottomTab && scrollContainer) {
@@ -1147,30 +1186,38 @@ export async function initViewer(options = {}) {
       }
       const jsxCode = await response.text();
 
+      // Fix relative imports for blob URL
+      const fileUrl = new URL(sourceUrl, window.location.href).href;
+      const resolveRelativeImportsPlugin = () => {
+        return {
+          visitor: {
+            "ImportDeclaration|ExportNamedDeclaration|ExportAllDeclaration"(path) {
+              if (path.node.source && path.node.source.value.startsWith(".")) {
+                path.node.source.value = new URL(path.node.source.value, fileUrl).href;
+              }
+            },
+            CallExpression(path) {
+              if (path.node.callee.type === "Import") {
+                const arg = path.node.arguments[0];
+                if (arg && arg.type === "StringLiteral" && arg.value.startsWith(".")) {
+                  arg.value = new URL(arg.value, fileUrl).href;
+                }
+              }
+            }
+          }
+        };
+      };
+
       // Transpile using Babel
-      let transpiled = Babel.transform(jsxCode, {
+      const transpiled = Babel.transform(jsxCode, {
         presets: [
           ["react", { runtime: "automatic" }], // Use new JSX transform
         ],
+        plugins: [
+          resolveRelativeImportsPlugin
+        ],
         filename: filename,
       }).code;
-
-      // Fix relative imports for blob URL
-      const fileUrl = new URL(sourceUrl, window.location.href).href;
-      transpiled = transpiled.replace(
-        /(import|export|from)\s+['"](\.[^'"]+)['"]/g,
-        (match, p1, p2) => {
-          const absUrl = new URL(p2, fileUrl).href;
-          return `${p1} '${absUrl}'`;
-        },
-      );
-      transpiled = transpiled.replace(
-        /import\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-        (match, p1) => {
-          const absUrl = new URL(p1, fileUrl).href;
-          return `import('${absUrl}')`;
-        },
-      );
 
       // Create a module blob
       const blob = new Blob([transpiled], { type: "application/javascript" });

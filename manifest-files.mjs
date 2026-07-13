@@ -10,5 +10,8 @@ export function listRootJsxFiles(root) {
 }
 
 export function toManifestJson(files) {
+  if (!Array.isArray(files)) {
+    throw new TypeError('Expected an array of files');
+  }
   return `${JSON.stringify(files, null, 2)}\n`;
 }
