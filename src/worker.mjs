@@ -166,7 +166,7 @@ async function readUploadFiles(request) {
     throw new ApiRequestError(400, error instanceof Error ? error.message : 'Uploaded JSX contains unsupported imports');
   }
 
-  const uploadedNames = new Set(uploads.map((file) => file.name));
+  const uploadedNames = seen;
   const requiredImports = findRequiredMjsImports(jsxFile.text);
   for (const importedFile of requiredImports) {
     if (!uploadedNames.has(importedFile)) {
