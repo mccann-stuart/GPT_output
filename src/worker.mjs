@@ -315,7 +315,7 @@ async function readJsonPayload(request) {
   }
 }
 
-function formatBoeDate(date) {
+export function formatBoeDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${BOE_MONTHS[date.getMonth()]}/${date.getFullYear()}`;
 }
 
