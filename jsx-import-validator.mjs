@@ -8,7 +8,7 @@ function isBareSpecifier(specifier) {
     !specifier.startsWith('#');
 }
 
-function findJsxImportSpecifiers(source) {
+export function findJsxImportSpecifiers(source) {
   let ast;
   try {
     ast = babel.packages.parser.parse(source, {

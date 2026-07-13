@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker, { formatBoeDate } from '../src/worker.mjs';
+import worker, { formatBoeDate, parseBoECsv } from '../src/worker.mjs';
 import { makeR2Bucket } from './r2-mock.mjs';
 
 const originalFetch = globalThis.fetch;
@@ -501,4 +501,34 @@ test('worker overwrites existing R2 files on upload without error', async () => 
 test('formatBoeDate properly formats dates', () => {
   assert.equal(formatBoeDate(new Date(2023, 0, 5)), '05/Jan/2023');
   assert.equal(formatBoeDate(new Date(2023, 11, 31)), '31/Dec/2023');
+});
+
+test('parseBoECsv correctly parses standard BoE CSV', () => {
+  const csvText = `DATE,IUDBEDR,IUDSOIA\n15 Jun 2026,3.75,3.7296\n16 Jun 2026,3.75,3.7304\n17 Jun 2026,3.75,3.7303\n`;
+  const result = parseBoECsv(csvText);
+  assert.deepEqual(result, { bankRate: 3.75, sonia: 3.7303, date: '17 Jun 2026' });
+});
+
+test('parseBoECsv returns null for CSV with less than 2 lines', () => {
+  const csvText = `DATE,IUDBEDR,IUDSOIA\n`;
+  const result = parseBoECsv(csvText);
+  assert.equal(result, null);
+});
+
+test('parseBoECsv returns null for CSV with missing required headers', () => {
+  const csvText = `DATE,IUDBEDR\n15 Jun 2026,3.75\n`;
+  const result = parseBoECsv(csvText);
+  assert.equal(result, null);
+});
+
+test('parseBoECsv handles partial or invalid latest rows by falling back to older rows', () => {
+  const csvText = `DATE,IUDBEDR,IUDSOIA\n16 Jun 2026,3.75,3.7304\n17 Jun 2026,3.75,3.7303\n18 Jun 2026,3.75,\n`;
+  const result = parseBoECsv(csvText);
+  assert.deepEqual(result, { bankRate: 3.75, sonia: 3.7303, date: '17 Jun 2026' });
+});
+
+test('parseBoECsv returns null if no rows have valid numbers', () => {
+  const csvText = `DATE,IUDBEDR,IUDSOIA\n16 Jun 2026,, \n17 Jun 2026,NaN,NaN\n`;
+  const result = parseBoECsv(csvText);
+  assert.equal(result, null);
 });
