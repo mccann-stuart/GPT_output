@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker, { buildBoeCsvUrl, findRequiredMjsImports, formatBoeDate, parseBoECsv } from '../src/worker.mjs';
+import worker, { buildBoeCsvUrl, findRequiredMjsImports, formatBoeDate, parseBoECsv, isSafeDeliverableFile } from '../src/worker.mjs';
 import { makeR2Bucket } from './r2-mock.mjs';
 
 const originalFetch = globalThis.fetch;
@@ -573,4 +573,21 @@ test('parseBoECsv returns null if no rows have valid numbers', () => {
   const csvText = `DATE,IUDBEDR,IUDSOIA\n16 Jun 2026,, \n17 Jun 2026,NaN,NaN\n`;
   const result = parseBoECsv(csvText);
   assert.equal(result, null);
+});
+
+test("isSafeDeliverableFile validates file names correctly", () => {
+  assert.equal(isSafeDeliverableFile("file.jsx"), true);
+  assert.equal(isSafeDeliverableFile("file.mjs"), true);
+  assert.equal(isSafeDeliverableFile("a.jsx"), true);
+  assert.equal(isSafeDeliverableFile("1.mjs"), true);
+  assert.equal(isSafeDeliverableFile("my-file_name.jsx"), true);
+  assert.equal(isSafeDeliverableFile(".jsx"), false);
+  assert.equal(isSafeDeliverableFile("file.js"), false);
+  assert.equal(isSafeDeliverableFile("../file.jsx"), false);
+  assert.equal(isSafeDeliverableFile("file/name.jsx"), false);
+  assert.equal(isSafeDeliverableFile("file name.jsx"), false);
+  assert.equal(isSafeDeliverableFile(null), false);
+  assert.equal(isSafeDeliverableFile(undefined), false);
+  assert.equal(isSafeDeliverableFile(123), false);
+  assert.equal(isSafeDeliverableFile({}), false);
 });
