@@ -3,7 +3,7 @@ public/*
 !public/
 !public/index.html
 !public/iphone.html
-!public/viewer-shared.mjs
+!public/viewer-*.mjs
 .vendor-entrypoints-tmp/
 
 # OS metadata files

@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const publicDir = join(root, 'public');
 const vendorDir = join(publicDir, 'vendor');
 const vendorEntryDir = join(root, '.vendor-entrypoints-tmp');
-const publicSourceFiles = new Set(['index.html', 'iphone.html', 'viewer-shared.mjs']);
+const publicSourceFiles = new Set(['index.html', 'iphone.html', 'viewer-analytics.mjs', 'viewer-metadata.mjs', 'viewer-state.mjs', 'viewer-utils.mjs', 'viewer-ui.mjs', 'viewer-shared.mjs']);
 const rootFiles = await listRootJsxFiles(root);
 const manifestJson = toManifestJson(rootFiles);
 
