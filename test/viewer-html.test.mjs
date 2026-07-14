@@ -13,6 +13,7 @@ test("iPhone and desktop viewers import initViewer from viewer-shared.mjs, which
   const desktopHtml = readViewer("index.html");
   const iphoneHtml = readViewer("iphone.html");
   const sharedJs = readViewer("viewer-shared.mjs");
+  const uiJs = readViewer("viewer-ui.mjs");
 
   // Verify pages import the shared viewer module
   assert.match(
@@ -47,21 +48,22 @@ test("viewer controls are opened through shortcuts rather than a visible desktop
   const desktopHtml = readViewer("index.html");
   const iphoneHtml = readViewer("iphone.html");
   const sharedJs = readViewer("viewer-shared.mjs");
+  const uiJs = readViewer("viewer-ui.mjs");
 
   assert.doesNotMatch(desktopHtml, /Open Controls|panel-toggle-btn/);
   assert.match(iphoneHtml, /panel-toggle-btn/);
 
-  assert.match(sharedJs, /window\.addEventListener\(\s*"keydown"/);
-  assert.match(sharedJs, /event\.altKey/);
-  assert.match(sharedJs, /event\.code === "KeyD"/);
-  assert.match(sharedJs, /isSafariBrowser\(\)/);
-  assert.match(sharedJs, /event\.ctrlKey/);
+  assert.match(uiJs, /window\.addEventListener\(\s*"keydown"/);
+  assert.match(uiJs, /event\.altKey/);
+  assert.match(uiJs, /event\.code === "KeyD"/);
+  assert.match(uiJs, /isSafariBrowser\(\)/);
+  assert.match(uiJs, /event\.ctrlKey/);
 
   // Assertions for mobile shake gesture controls
-  assert.match(sharedJs, /devicemotion/);
-  assert.match(sharedJs, /DeviceMotionEvent/);
-  assert.match(sharedJs, /requestPermission/);
-  assert.match(sharedJs, /acceleration/);
+  assert.match(uiJs, /devicemotion/);
+  assert.match(uiJs, /DeviceMotionEvent/);
+  assert.match(uiJs, /requestPermission/);
+  assert.match(uiJs, /acceleration/);
 });
 
 test("viewer shells configure Google Analytics using standard config", () => {
