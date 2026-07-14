@@ -3,17 +3,16 @@ import { createRoot } from "react-dom/client";
 
 export { GA_MEASUREMENT_ID, viewerTypeForMobile, sanitizedAnalyticsUrlParts, analyticsParamsForViewer } from "./viewer-analytics.mjs";
 export { browserTitleForFile, faviconInitialsForFile, faviconColorForFile } from "./viewer-metadata.mjs";
-export { SHARE_PARAM, MAX_SHARED_STATE_LENGTH, encodeBase64Url, decodeBase64Url, parseSharedState } from "./viewer-state.mjs";
+export { SHARE_PARAM, MAX_SHARED_STATE_LENGTH, HISTORY_REPLACE_MIN_INTERVAL_MS, createHistoryReplaceScheduler, encodeBase64Url, decodeBase64Url, parseSharedState } from "./viewer-state.mjs";
 export { isSafeObjectKey, isAllowedManifestFile, truncateMiddle, isPlainObject, deepClone, deepEqual, applyOverrides, diffFromDefaults, isSafeUploadFileName } from "./viewer-utils.mjs";
 export { addDeviceMotionPermissionTapHandler } from "./viewer-ui.mjs";
 
 import { sendAnalyticsEvent } from "./viewer-analytics.mjs";
-import { updateBrowserMetadata, DEFAULT_BROWSER_TITLE, FAVICON_LINK_ID } from "./viewer-metadata.mjs";
-import { setupClipboardCopy, summarizeUploadFiles, setupUploadSection, isOpenControlsShortcut, isSafariBrowser, isEditableShortcutTarget, addOpenControlsShortcut, setupPanelToggles, registerGlobalErrorHandlers } from "./viewer-ui.mjs";
+import { updateBrowserMetadata } from "./viewer-metadata.mjs";
+import { setupClipboardCopy, setupUploadSection, setupPanelToggles, registerGlobalErrorHandlers } from "./viewer-ui.mjs";
 import { isAllowedManifestFile, truncateMiddle, isPlainObject, deepClone, diffFromDefaults, applyOverrides } from "./viewer-utils.mjs";
-import { parseSharedState, encodeBase64Url, SHARE_PARAM } from "./viewer-state.mjs";
+import { parseSharedState, encodeBase64Url, SHARE_PARAM, createHistoryReplaceScheduler } from "./viewer-state.mjs";
 import { viewerTypeForMobile, analyticsParamsForViewer } from "./viewer-analytics.mjs";
-import { browserTitleForFile } from "./viewer-metadata.mjs";
 
 export async function initViewer(options = {}) {
   const {
@@ -55,6 +54,7 @@ export async function initViewer(options = {}) {
   let currentSettings = {};
   let currentMountKey = "";
   let renderVersion = 0;
+  const historyReplaceScheduler = createHistoryReplaceScheduler(window.history);
 
   // Helper functions
 
@@ -146,7 +146,10 @@ export async function initViewer(options = {}) {
   }
 
   async function fetchManifest() {
-    const res = await fetch("jsx-manifest.json");
+    const [res, uploadedFiles] = await Promise.all([
+      fetch("jsx-manifest.json"),
+      fetchUploadedManifest(),
+    ]);
     if (!res.ok) throw new Error("Failed to load jsx-manifest.json");
     const manifest = await res.json();
     if (!Array.isArray(manifest)) {
@@ -156,7 +159,6 @@ export async function initViewer(options = {}) {
     const staticFiles = manifest.filter(isAllowedManifestFile);
     staticFiles.forEach((file) => FILE_SOURCES.set(file, "static"));
 
-    const uploadedFiles = await fetchUploadedManifest();
     uploadedFiles.forEach((file) => FILE_SOURCES.set(file, "r2"));
 
     ALLOWED_FILES = [...FILE_SOURCES.keys()];
@@ -256,9 +258,10 @@ export async function initViewer(options = {}) {
       shareUrlEl.value = url.toString();
     }
     if (pushHistory) {
+      historyReplaceScheduler.cancel();
       window.history.pushState({}, "", url);
     } else {
-      window.history.replaceState({}, "", url);
+      historyReplaceScheduler.schedule(url);
     }
   }
 
@@ -458,6 +461,7 @@ export async function initViewer(options = {}) {
   });
 
   window.addEventListener("popstate", () => {
+    historyReplaceScheduler.cancel();
     const { initialFile, initialOverrides } = getStateFromUrl(
       window.location.href,
     );

@@ -5,3 +5,19 @@ public/*
 !public/iphone.html
 !public/viewer-*.mjs
 .vendor-entrypoints-tmp/
+
+# OS metadata files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# OneDrive and Office temporary/sync files
+~$*
+.~*
+*.tmp
+*.onedrive
+*.OneDrive
