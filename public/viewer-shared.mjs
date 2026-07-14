@@ -8,7 +8,7 @@ export { isSafeObjectKey, isAllowedManifestFile, truncateMiddle, isPlainObject, 
 export { addDeviceMotionPermissionTapHandler } from "./viewer-ui.mjs";
 
 import { sendAnalyticsEvent } from "./viewer-analytics.mjs";
-import { updateBrowserMetadata } from "./viewer-metadata.mjs";
+import { browserTitleForFile, updateBrowserMetadata } from "./viewer-metadata.mjs";
 import { setupClipboardCopy, setupUploadSection, setupPanelToggles, registerGlobalErrorHandlers } from "./viewer-ui.mjs";
 import { isAllowedManifestFile, truncateMiddle, isPlainObject, deepClone, diffFromDefaults, applyOverrides } from "./viewer-utils.mjs";
 import { parseSharedState, encodeBase64Url, SHARE_PARAM, createHistoryReplaceScheduler } from "./viewer-state.mjs";

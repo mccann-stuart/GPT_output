@@ -44,6 +44,16 @@ test("iPhone and desktop viewers import initViewer from viewer-shared.mjs, which
   }
 });
 
+test("viewer analytics imports the browser title helper it calls", () => {
+  const sharedJs = readViewer("viewer-shared.mjs");
+
+  assert.match(
+    sharedJs,
+    /import\s*\{[^}]*\bbrowserTitleForFile\b[^}]*\}\s*from\s*["']\.\/viewer-metadata\.mjs["']/s,
+  );
+  assert.match(sharedJs, /page_title:\s*browserTitleForFile\(currentFile\)/);
+});
+
 test("viewer controls are opened through shortcuts rather than a visible desktop open button", () => {
   const desktopHtml = readViewer("index.html");
   const iphoneHtml = readViewer("iphone.html");
